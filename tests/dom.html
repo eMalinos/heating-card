@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="cs">
+<head><meta charset="utf-8"><title>heating-card DOM checks</title>
+<style id="page">body{margin:0;padding:16px;background:#efefef;font-family:Roboto,system-ui,sans-serif}</style>
+</head>
+<body>
+<!--
+  Browser checks with a fake hass (tests/fixtures/states.json + 5 more valves, like design V5). Run:
+  python3 -m http.server 8766 &
+  "Google Chrome" --headless=new --virtual-time-budget=30000 --dump-dom http://localhost:8766/tests/dom.html | grep RESULT
+  Looks (?theme=): none = HA fallbacks (light), homecraft = Homecraft tokens (Břidlice light), dark = Břidlice dark tokens, e.g.
+  "Google Chrome" --headless=new --virtual-time-budget=30000 --window-size=512,900 --screenshot=docs/card.png "http://localhost:8766/tests/dom.html?shot=1&theme=homecraft"
+-->
+<div id="box" style="width:480px"></div>
+<pre id="out"></pre>
+<script type="module">
+  const errors = [];
+  addEventListener('error', (e) => errors.push(e.message));
+  const origError = console.error;
+  console.error = (...a) => { errors.push(a.join(' ')); origError(...a); };
+
+  const q = new URLSearchParams(location.search);
+  const THEMES = {
+    homecraft: '--hfb-card:#fff;--hfb-border:#DFE3E8;--hfb-fill:#F0F2F5;--hfb-text:#1C2128;--hfb-text-2:#6E7682;--hfb-accent:#4F6B8C;--hfb-card-radius:20px;--hfb-card-shadow:0 1px 4px rgba(0,0,0,.06);--hfb-btn-raised-bg:#fff;--hfb-btn-raised-shadow:0 1px 3px rgba(0,0,0,.1);--hfb-seg-track:#F0F2F5;--hfb-seg-on:#fff;--hfb-seg-on-shadow:0 1px 3px rgba(0,0,0,.1);--hfb-seg-on-color:#1C2128;--hfb-dot-idle:#fff;--hfb-hot-tile:color-mix(in srgb,#E8592C 8%,#F0F2F5);--hfb-run-dot:linear-gradient(145deg,color-mix(in srgb,#4F6B8C 65%,#fff),#4F6B8C);--hfb-run-glow:0 2px 6px color-mix(in srgb,#4F6B8C 40%,transparent);--success-color:#1E7A46;--info-color:#4F6B8C;--error-color:#E5484D;--disabled-text-color:#A9AFB7',
+    dark: '--hfb-card:#181C22;--hfb-border:#262C35;--hfb-fill:#21262E;--hfb-text:#E9EDF2;--hfb-text-2:#949CA8;--hfb-accent:#86A9D1;--hfb-card-radius:20px;--hfb-card-shadow:0 1px 4px rgba(0,0,0,.4);--hfb-btn-raised-bg:#181C22;--hfb-btn-raised-shadow:0 1px 3px rgba(0,0,0,.5);--hfb-seg-track:#21262E;--hfb-seg-on:#181C22;--hfb-seg-on-shadow:0 1px 3px rgba(0,0,0,.5);--hfb-seg-on-color:#E9EDF2;--hfb-dot-idle:#181C22;--hfb-hot-tile:color-mix(in srgb,#E8592C 10%,#21262E);--hfb-run-dot:linear-gradient(145deg,color-mix(in srgb,#86A9D1 65%,#fff),#86A9D1);--hfb-run-glow:0 2px 6px color-mix(in srgb,#86A9D1 40%,transparent);--success-color:#5FD08F;--info-color:#86A9D1;--error-color:#FF8A80;--disabled-text-color:#5C636D',
+  };
+  const theme = q.get('theme');
+  if (THEMES[theme]) document.documentElement.style.cssText = THEMES[theme];
+  document.body.style.background = theme === 'dark' ? '#0F1216' : theme === 'homecraft' ? '#ECEEF1' : '#efefef';
+
+  // a stand-in for heating-schedule-card (a separate repo): records its config
+  customElements.define('heating-schedule-card', class extends HTMLElement { setConfig(c) { this.cfg = c; } });
+  await import('../dist/heating-card.js');
+
+  const C = 'circuit_demo';
+  const fixture = await (await fetch('./fixtures/states.json')).json();
+  const states = structuredClone(fixture);
+  const set = (id, state, attributes = {}) => { states[id] = { state, attributes: { ...states[id]?.attributes, ...attributes } }; };
+  // the design's eight valves (V5-Main)
+  const ids = {};
+  const mk = (key, name, now, target, extra = {}) => {
+    ids[key] = `climate.${key}`;
+    states[ids[key]] = { state: 'heat', attributes: { friendly_name: name, current_temperature: now, temperature: target, min_temp: 5, max_temp: 30, ...extra } };
+  };
+  mk('living', 'Obývák', 20.4, 21); mk('workroom', 'Pracovna', 18.9, 20.5); mk('hallway', 'Chodba', 19.2, 19);
+  mk('kitchen', 'Kuchyň', 21.2, 21); mk('bedroom', 'Ložnice', 18.6, 18); mk('kids', 'Dětský pokoj', 19.6, 21);
+  mk('bath', 'Koupelna', 22.6, 23); mk('dressing', 'Šatna', 18.4, 19);
+  const valveIds = Object.values(ids);
+  const phases = Object.fromEntries(valveIds.map((v) => [v, ['normal']]));
+  phases[ids.workroom] = ['fast']; phases[ids.hallway] = ['run']; phases[ids.bedroom] = ['closed'];
+  set(`sensor.heating_valves_${C}`, '3', { phases, demand: [ids.living, ids.workroom, ids.bath], left: 0 });
+  set(`sensor.heating_off_schedule_${C}`, '2', { window_open_climates: [ids.kids] });
+  set(`sensor.heating_low_batteries_${C}`, '3', { low_battery: [
+    { climate: ids.bath, source: 'valve', state: 9 },
+    { climate: ids.dressing, source: 'valve', state: 14 }, { climate: ids.dressing, source: 'window', state: 8 }] });
+  set(`input_text.heating_status_${C}`, 'success|Program Víkend nastaven na všech 8 hlavic.');
+  set(`sensor.heating_program_${C}`, 'weekend', { program_names: { weekend: 'Víkend' } });
+  set(`sensor.heating_outdoor_temperature_${C}`, '6.2');
+  set(`binary_sensor.heating_state_${C}`, 'on', { title: 'Topení přízemí' });
+
+  const calls = [];
+  const infos = [];
+  const hass = { states, callService: async (domain, service, data) => { calls.push({ domain, service, data }); } };
+  const cfg = { circuit: C, valves: valveIds };
+
+  const card = document.createElement('heating-card');
+  card.setConfig(cfg);
+  card.hass = hass;
+  card.addEventListener('hass-more-info', (e) => infos.push(e.detail.entityId));
+  document.getElementById('box').appendChild(card);
+  const root = card.shadowRoot;
+  const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const $ = (s) => root.querySelector(s);
+  const $$ = (s) => [...root.querySelectorAll(s)];
+  const ptr = (el, type) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true }));
+  const press = async (el, ms = 0) => { ptr(el, 'pointerdown'); if (ms) await tick(ms); ptr(el, 'pointerup'); };
+  await tick(100);
+
+  if (q.get('shot')) { document.getElementById('out').remove(); throw 'shot'; }
+
+  const r = {};
+  r.twoBoxes = $$('.card').length === 2 && $$('.tile').length === 8;
+  r.header = $('h2').textContent === 'Topení přízemí' && $('.sub').textContent === 'Kotel topí · 3 hlavice chtějí teplo' && $('.live b').textContent === '6,2';
+  r.status = $('.alert.success span').textContent.startsWith('Program Víkend') && !!$('.alert [data-act="clear"]');
+  r.mode = $('.seg .on').dataset.val === 'on' && $$('.seg button').length === 3;
+  r.panel = $$('.facts .v')[0].textContent === 'Víkend' && $$('.facts .v')[1].textContent.replace(/\s+/g, ' ').trim() === '2 hlavice';
+  r.phases = $$('.tile').map((t) => t.dataset.phase).join() === 'heat,fast,run,idle,closed,window,heat,idle';
+  r.tileLooks = $$('.tile.hot').length === 3 && $$('.tile.off').length === 1 && $$('.flame').length === 4 && $$('.badge').length === 2; // 3 hot tiles + header flame
+  r.states = $$('.tile .state').map((s) => s.textContent).join('|') === 'Topí · 20,4 °C|Rychlý start · 18,9 °C|Doběh · 19,2 °C|Nečinný · 21,2 °C|Zavřeno · 18,6 °C|Okno otevřené · 19,6 °C|Baterie 9 %|Hlavice 14 % · okno 8 %';
+  r.summary = $('.head2 .sub').textContent === '3 topí · 1 okno · 2 baterie';
+  r.disabledTile = $$('.tile')[5].querySelectorAll('.pm:disabled').length === 2 && $$('.tile')[0].querySelectorAll('.pm:disabled').length === 0;
+  r.targets = $$('.tile .val')[1].textContent.replace(/\s/g, ' ') === '20,5 °C';
+
+  // actions
+  $('[data-act="mode"][data-val="off"]').click(); await tick();
+  r.modeCall = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'input_select', service: 'select_option', data: { entity_id: `input_select.heating_mode_${C}`, option: 'off' } });
+  $('[data-act="clear"]').click(); await tick();
+  r.clearCall = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'input_text', service: 'set_value', data: { entity_id: `input_text.heating_status_${C}`, value: '' } });
+  $('[data-act="sync"]').click(); await tick();
+  r.syncCall = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'input_button', service: 'press', data: { entity_id: `input_button.heating_sync_${C}` } });
+  const living = $$('.tile')[0];
+  $$('.tile')[0].querySelector('[data-d="1"]').click(); await tick();
+  r.plusCall = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'climate', service: 'set_temperature', data: { entity_id: ids.living, temperature: 21.5 } });
+  // quick taps add up while hass still reports 21: 21.5, 22, then back to 21.5; the tile shows the pending value
+  $$('.tile')[0].querySelector('[data-d="1"]').click(); await tick();
+  r.plusPlus = calls.at(-1).data.temperature === 22 && $$('.tile .val')[0].textContent.replace(/\s/g, ' ') === '22,0 °C';
+  $$('.tile')[0].querySelector('[data-d="-1"]').click(); await tick();
+  r.minusCall = calls.at(-1).data.temperature === 21.5;
+  await tick(5200); // pending expires: back to what hass reports
+  r.pendingExpires = $$('.tile .val')[0].textContent.replace(/\s/g, ' ') === '21,0 °C';
+  const nCalls = calls.length;
+  $$('.tile')[5].querySelector('[data-d="1"]').click(); await tick();
+  r.disabledNoCall = calls.length === nCalls;
+
+  // hass updates re-render: sync spins while applying, the cross is gone with the message
+  card.hass = { ...hass, states: { ...states, [`input_text.heating_status_${C}`]: { state: '', attributes: {} },
+    [`sensor.heating_applying_${C}`]: { state: 'applying', attributes: { trigger: 'sync', left: 4, pending: [] } } } };
+  await tick();
+  r.liveUpdate = !$('.alert') && !!$('[data-act="sync"] .spin') && $('[data-act="sync"]').disabled;
+  card.hass = { ...hass, states: { ...states, [`sensor.heating_applying_${C}`]: { state: 'applying', attributes: { trigger: 'program', left: 4 } } } };
+  await tick();
+  r.programApplying = $$('.facts .v')[0].textContent.includes('Nastavuji… 4') && !$('[data-act="sync"]').disabled;
+  card.hass = hass; await tick();
+
+  // an unrelated hass update rebuilds nothing; a change of one valve patches only its tile
+  const tile0 = $$('.tile')[0], tile1 = $$('.tile')[1], flame1 = tile1.querySelector('.flame'), box1 = $('[data-p="box1"] .head');
+  card.hass = { ...hass, states: { ...states, 'sensor.unrelated': { state: '1', attributes: {} } } }; await tick();
+  r.noRebuild = $$('.tile')[0] === tile0 && $('[data-p="box1"] .head') === box1;
+  card.hass = { ...hass, states: { ...states, [ids.living]: { ...states[ids.living], attributes: { ...states[ids.living].attributes, current_temperature: 20.9 } } } }; await tick();
+  r.patchOne = $$('.tile')[0] !== tile0 && $$('.tile')[1] === tile1 && tile1.querySelector('.flame') === flame1 && $$('.tile .state')[0].textContent === 'Topí · 20,9 °C';
+  // while a pointer is down the render waits for pointerup
+  const dn = $$('.main')[1];
+  ptr(dn, 'pointerdown');
+  card.hass = { ...hass, states: { ...states, [ids.workroom]: { ...states[ids.workroom], attributes: { ...states[ids.workroom].attributes, current_temperature: 19.5 } } } }; await tick();
+  r.deferred = $$('.tile .state')[1].textContent === 'Rychlý start · 18,9 °C' && $$('.main')[1] === dn;
+  ptr(dn, 'pointerup'); await tick();
+  r.flushed = $$('.tile .state')[1].textContent === 'Rychlý start · 19,5 °C';
+  await tick(300); // the tap above opens nothing pending; close a dialog it may have opened
+  if ($('dialog').open) $('dialog').close();
+  card.hass = hass; await tick();
+
+  // gestures: default = tap on the tile opens the schedule dialog, tap on the icon circle fires more-info
+  const m0 = () => $$('.main')[0];
+  await press(m0()); await tick();
+  const dlg = $('dialog');
+  const sched = dlg.querySelector('heating-schedule-card');
+  r.tapSchedule = dlg.open && JSON.stringify(sched?.cfg) === JSON.stringify({ valve: ids.living, circuits: [{ id: C, valves: valveIds }], time_step: 15 }) && sched.hass === hass;
+  dlg.close(); await tick();
+  await press(m0().querySelector('.dot')); await tick();
+  r.iconInfo = infos.at(-1) === ids.living && !dlg.open;
+
+  // hold and double tap
+  card.setConfig({ ...cfg, schedule_gesture: 'hold', info_gesture: 'double_tap' });
+  await press(m0()); await tick(350);
+  const nInfo = infos.length;
+  r.tapNothing = !dlg.open && infos.length === nInfo;
+  await press(m0(), 650); await tick();
+  r.holdSchedule = dlg.open;
+  dlg.close(); await tick();
+  await press(m0()); await press(m0()); await tick(400);
+  r.doubleTapOnce = infos.length === nInfo + 1 && infos.at(-1) === ids.living;
+  card.setConfig({ ...cfg, schedule_gesture: 'icon_hold', info_gesture: 'none' });
+  await press(m0().querySelector('.dot'), 650); await tick();
+  r.iconHold = dlg.open;
+  dlg.close(); await tick();
+
+  // keyboard: Enter / Space on the text run schedule, on the icon button info, whatever the gestures are
+  card.setConfig({ ...cfg, schedule_gesture: 'hold', info_gesture: 'double_tap' });
+  const key = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, composed: true, cancelable: true }));
+  const nInfoK = infos.length;
+  const txt = root.querySelector('.txt[role="button"]');
+  key(txt, 'Enter'); await tick();
+  r.keySchedule = dlg.open;
+  dlg.close(); await tick();
+  const iconBtn = root.querySelector('button.dot');
+  r.iconIsButton = iconBtn.getAttribute('aria-label') === 'Detail Obývák';
+  key(iconBtn, ' '); await tick();
+  r.keyInfo = infos.length === nInfoK + 1 && infos.at(-1) === ids.living;
+  card.setConfig({ ...cfg, schedule_gesture: 'none', info_gesture: 'none' });
+  r.noneNoControls = !root.querySelector('button.dot') && !root.querySelector('.txt[role="button"]');
+  key(root.querySelector('.txt'), 'Enter'); await tick();
+  r.noneNoAction = !dlg.open && infos.length === nInfoK + 1;
+
+  r.noErrors = errors.length === 0;
+  const ok = Object.values(r).every(Boolean);
+  document.getElementById('out').textContent = 'RESULT ' + (ok ? 'OK ' : 'FAIL ') + JSON.stringify(r) + (errors.length ? ' ERRORS ' + JSON.stringify(errors) : '');
+</script>
+</body>
+</html>
