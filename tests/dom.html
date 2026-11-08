@@ -134,6 +134,8 @@
 
   // ?ctl=arc|ruler|track: the valve dialog's target control (screenshots of the v8 sliders)
   if (q.get('ctl')) states[`input_select.heating_target_control_${C}`] = { state: q.get('ctl'), attributes: {} };
+  // ?tiles=side|stack: the valve tiles' layout
+  if (q.get('tiles')) states[`input_select.heating_tile_layout_${C}`] = { state: q.get('tiles'), attributes: {} };
   const card = document.createElement('heating-card');
   card.setConfig(cfg);
   card.hass = hass;
@@ -290,7 +292,7 @@
     && vd.querySelector('.vd-tile.low .fv').textContent === '14 %' && t('.vd-win .wn') === 'Okno balkon';
   r.vdFacts = [...vd.querySelectorAll('.vd-tile .fv')].map((e) => e.textContent).join('|') === '14 %|OK (−71 dBm)|12 %|V pořádku';
   r.vdWindows = vd.querySelectorAll('.vd-win').length === 2 && vd.querySelectorAll('.vd-h')[1].textContent === 'Okna (2)' && vd.querySelector('.vd-win .chip.low') && vd.querySelectorAll('.vd-win .chip').length === 2;
-  r.vdChart = !!vd.querySelector('.vd-chart svg path[stroke="#E8592C"]') && wsCalls.at(-1).entity_ids.length === 4 && vd.querySelectorAll('.band').length === 0 && vd.querySelectorAll('.ph-fast').length === 1 && vd.querySelectorAll('.ch-y span').length > 1;
+  r.vdChart = !!vd.querySelector('.vd-chart svg path[stroke="#E8592C"]') && wsCalls.at(-1).entity_ids.length === 4 && vd.querySelectorAll('.band').length === 0 && vd.querySelectorAll('.ph-fast-l').length === 1 && vd.querySelectorAll('.ch-y2 span').length === 3 && vd.querySelectorAll('.ch-y span').length > 1;
   // chart window: ‹ goes 6 h back (whole hours), › and Teď come back; a drag right by a quarter of the plot = 6 h back
   const hourNow = Math.floor(Date.now() / 3600000) * 3600000;
   // the fetch covers 48 h before the window's end and 24 h after it (at most now)

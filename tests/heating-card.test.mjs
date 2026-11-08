@@ -333,18 +333,22 @@ test('chartModel: lines, window bands, hour labels', () => {
   assert.equal(chartModel(rows, [{ rows: [{ lu: h(24), s: 'off' }, { lu: h(12), s: 'on' }], since: end - 12 * 3600000 }], end).bands[0].x, 220);
 });
 
-test('chartModel: y ticks and fast-start strips of this valve (no overrun)', () => {
+test('chartModel: fast start target on the right axis, the °C axis from the room and the ordinary target', () => {
   const end = Date.parse('2026-11-08T12:00:00');
   const h = (n) => (end - n * 3600000) / 1000;
-  const rows = [{ lu: h(24), a: { current_temperature: 19, temperature: 21 } }];
+  const lim = { min_temp: 4, max_temp: 30 };
+  // 21 °C, fast start 6 h ago holds the valve at 30, back to 21 at 2 h; the room 19
+  const rows = [{ lu: h(24), a: { ...lim, current_temperature: 19, temperature: 21 } }, { lu: h(6), a: { ...lim, current_temperature: 19, temperature: 30 } }, { lu: h(2), a: { ...lim, current_temperature: 19, temperature: 21 } }];
   const ph = (p) => ({ phases: { [K]: [p], 'climate.other': ['fast'] } });
   const m = chartModel(rows, [], end, 24, [{ lu: h(30), a: ph('normal') }, { lu: h(6), a: ph('fast') }, { lu: h(3), a: ph('overrun') }, { lu: h(2), a: ph('normal') }], K);
-  assert.deepEqual(m.ticks.map((t) => t.text), ['18°', '19°', '20°', '21°', '22°']);
-  assert.deepEqual(m.fast, [{ x: 330, w: 55 }]);
-  assert.equal(m.run, undefined);
-  assert.deepEqual(chartModel(rows, [], end).fast, []);
-  assert.match(detailHtml(detail({}), m), /rychlý start/);
-  assert.doesNotMatch(detailHtml(detail({}), m), /lg run|ph-run|>doběh</);
+  assert.deepEqual(m.ticks.map((t) => t.text), ['18°', '19°', '20°', '21°', '22°']); // 30 never stretches the °C axis
+  assert.deepEqual(m.rticks.map((t) => t.text), ['4°', '17°', '30°']);
+  assert.match(m.fast, /^M330 10 H385$/); // at the top of the right axis from 6 h to 3 h ago (the phase ends at 3 h)
+  const plain = chartModel(rows.slice(0, 1), [], end);
+  assert.equal(plain.fast, ''); assert.deepEqual(plain.rticks, []);
+  const html = detailHtml(detail({}), m);
+  assert.match(html, /ch-box r/); assert.match(html, /ch-y ch-y2/); assert.match(html, /rychlý start · cíl vpravo/);
+  assert.doesNotMatch(html, /lg run|ph-run|>doběh</);
 });
 
 test('signalWord', () => {
@@ -684,7 +688,11 @@ test('target control: kind, value under the pointer, markup', () => {
   assert.equal(controlValue('arc', v, at(100)), 5);
   assert.equal(controlValue('arc', v, at(80)), 30);
   for (const k of ['arc', 'ruler', 'track']) assert.ok(controlHtml(k, v, 20.5).length > 100, k);
-  assert.match(controlHtml('arc', v, 20.5), /teď<\/div><b>18,4/);
+  // design v8: the target and its − / + live in the box
+  assert.match(controlHtml('arc', v, 20.5), /Cíl<\/div><b>20,5<\/b><div class="lbl">°C · teď 18,4/);
+  for (const k of ['arc', 'ruler', 'track']) assert.equal((controlHtml(k, v, 20.5).match(/data-act="step"/g) ?? []).length, 2, k);
+  assert.match(controlHtml('ruler', v, 20.5), /class="tv-big" style="color: rgb[^"]+">20,5/);
+  assert.match(controlHtml('track', v, 20.5), /class="tv-mid">20,5/);
   assert.match(controlHtml('ruler', v, 20.5), /translateX\(-744px\)/); // (20.5 - 5) * 48
   assert.match(controlHtml('track', v, 20.5), /tr-knob" style="left: 62%/);
   assert.equal(controlHtml('track', v, null), '');
@@ -698,6 +706,14 @@ test('settings Ostatní: the target control picker only with its helper', () => 
   const html = settingsHtml(v);
   assert.match(html, /data-act="control" data-val="arc" data-k="control:arc" aria-pressed="true" class="cbtn on"><svg class="cpic"[^]*?<span>Oblouk<\/span>/);
   assert.match(html, /data-val="buttons"[^>]*aria-pressed="false" class="cbtn"><svg class="cpic"[^]*?<span>Tlačítka<\/span>/);
+});
+
+test('settings Ostatní: the tile layout picker only with its helper', () => {
+  assert.equal(settingsView(world({}), CFG, 'other').layout, null);
+  const v = settingsView(world({ [`input_select.heating_tile_layout_${C}`]: { state: 'stack' } }), CFG, 'other');
+  assert.equal(v.layout, 'stack');
+  assert.match(settingsHtml(v), /data-act="tiles" data-val="stack" data-k="tiles:stack" aria-pressed="true" class="cbtn on"><svg class="cpic"[^]*?<span>Pod ikonou<\/span>/);
+  assert.equal(settingsView(world({ [`input_select.heating_tile_layout_${C}`]: { state: 'weird' } }), CFG, 'other').layout, 'side');
 });
 
 test('tempColor: fixed to the temperature, a fill never stretches it', () => {

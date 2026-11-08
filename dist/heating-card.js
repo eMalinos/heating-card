@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.5';
+const VERSION = '0.1.6';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -268,7 +268,8 @@ export const signalWord = (dbm) => (dbm >= -70 ? 'Silný' : dbm >= -85 ? 'OK' : 
 
 // Chart geometry over `hours` ending at `end` (24 h = CHART.w wide). rows = history/history_during_period rows of the climate ({a: attributes, lu: epoch s}),
 // winRows = rows of every window sensor ({s: state, lu}), phaseRows = rows of sensor.heating_valves_<circuit> ({a: {phases}, lu}).
-// Returns SVG path data, open-window / fast-start spans in x units and the y-axis ticks, or null without data.
+// Returns SVG path data, open-window spans in x units, the left °C ticks (room + ordinary target) and, on a right axis
+// over the valve's whole range, the target while fast start holds it (`fast`, `rticks`), or null without data.
 export const CHART = { w: 440, top: 10, bottom: 114 };
 const CHART_BACK_MS = 24 * 3600000; // the window's length
 const CHART_MAX_BACK_MS = 7 * 24 * 3600000; // how far back it can be dragged (its start)
@@ -279,28 +280,41 @@ export function chartModel(rows, wins, end, hours = 24, phaseRows = [], climate 
   const W = (CHART.w * hours) / 24; // 24 h = CHART.w; a longer span is wider (the dialog shows 24 h of it and pans)
   const last = Math.min(end, now); // nothing is drawn past now
   const x = (t) => Math.round(((Math.min(end, Math.max(start, t)) - start) / (end - start)) * W * 10) / 10;
-  // a target at the valve's max / min is Node-RED forcing it (fast start, overrun at max; window, off at min):
-  // left out of the target line and the y scale, the strips and bands show those spans
-  let cur = null, tgt = null, lo = -Infinity, hi = Infinity;
+  // the valve's phase spans: a phase holds until the next row of the sensor
+  const ph = (phaseRows ?? []).map((r) => ({ t: ts(r), p: r.a?.phases?.[climate]?.[0] ?? 'normal' })).filter((p) => Number.isFinite(p.t) && p.t <= last).sort((a, b) => a.t - b.t);
+  const phaseAt = (t) => { let p = 'normal'; for (const r of ph) { if (r.t > t) break; p = r.p; } return p; };
+  // a target at the valve's max / min is Node-RED forcing it (fast start, run at max; window, off at min) and so is
+  // any target during fast start: left out of the °C scale; fast start's goes to the right axis
+  let cur = null, raw = null, lo = -Infinity, hi = Infinity;
   const pts = (rows ?? []).map((r) => {
     lo = num(r.a?.min_temp) ?? lo; hi = num(r.a?.max_temp) ?? hi;
     cur = num(r.a?.current_temperature) ?? cur;
-    const t = num(r.a?.temperature);
-    if (t != null) tgt = t >= hi || t <= lo ? null : t;
-    return { t: ts(r), cur, tgt };
+    raw = num(r.a?.temperature) ?? raw;
+    return { t: ts(r), cur, raw };
   }).filter((p) => Number.isFinite(p.t) && p.t <= last);
+  // split at every phase change too, so a fast-start span starts and ends where the sensor says
+  for (const r of ph) if (r.t > start && !pts.some((p) => p.t === r.t)) { const prev = pts.filter((p) => p.t < r.t).at(-1); if (prev) pts.push({ ...prev, t: r.t }); }
+  pts.sort((a, b) => a.t - b.t);
+  for (const p of pts) {
+    const fast = phaseAt(p.t) === 'fast';
+    p.tgt = p.raw == null || fast || p.raw >= hi || p.raw <= lo ? null : p.raw;
+    p.fast = fast && p.raw != null ? p.raw : null;
+  }
   const vals = pts.flatMap((p) => [p.cur, p.tgt]).filter((n) => n != null);
   if (!vals.length) return null;
   const yLo = Math.floor(Math.min(...vals) - 0.5), yHi = Math.ceil(Math.max(...vals) + 0.5);
   const y = (n) => Math.round((CHART.bottom - ((n - yLo) / (yHi - yLo)) * (CHART.bottom - CHART.top)) * 10) / 10;
-  const line = (key, step) => {
+  // the right axis: the valve's whole range (fast start holds it near the top)
+  const rLo = Number.isFinite(lo) ? lo : 5, rHi = Number.isFinite(hi) ? hi : 30;
+  const yR = (n) => Math.round((CHART.bottom - ((Math.min(rHi, Math.max(rLo, n)) - rLo) / (rHi - rLo)) * (CHART.bottom - CHART.top)) * 10) / 10;
+  const line = (key, step, yf = y) => {
     let d = '', prev = null;
     for (const p of pts) {
       if (p[key] == null) { if (prev && step) d += ` H${x(p.t)}`; prev = null; continue; } // a gap: the forced span
-      d += !prev ? `${d ? ' ' : ''}M${x(p.t)} ${y(p[key])}` : step ? ` H${x(p.t)} V${y(p[key])}` : ` L${x(p.t)} ${y(p[key])}`;
+      d += !prev ? `${d ? ' ' : ''}M${x(p.t)} ${yf(p[key])}` : step ? ` H${x(p.t)} V${yf(p[key])}` : ` L${x(p.t)} ${yf(p[key])}`;
       prev = p;
     }
-    return prev ? d + (step ? ` H${x(last)}` : ` L${x(last)} ${y(prev[key])}`) : d; // the last value holds until now
+    return prev ? d + (step ? ` H${x(last)}` : ` L${x(last)} ${yf(prev[key])}`) : d; // the last value holds until now
   };
   // open spans: merge the windows' "on" intervals (a state holds until the next row)
   const spans = [];
@@ -325,15 +339,12 @@ export function chartModel(rows, wins, end, hours = 24, phaseRows = [], climate 
     if (h % 6 === 0) labels.push({ x: x(t), text: h ? `${h}:00` : `${new Date(t).getDate()}. ${new Date(t).getMonth() + 1}.` });
   }
   const band = ([a, b]) => ({ x: x(a), w: Math.max(2, Math.round((x(b) - x(a)) * 10) / 10) });
-  // the valve's phase spans: a phase holds until the next row of the sensor
-  const ph = (phaseRows ?? []).map((r) => ({ t: ts(r), p: r.a?.phases?.[climate]?.[0] ?? 'normal' })).filter((p) => Number.isFinite(p.t) && p.t <= last).sort((a, b) => a.t - b.t);
-  const phaseBands = (keys) => ph.flatMap((p, i) => (keys.includes(p.p) && (ph[i + 1]?.t ?? last) > start ? [band([p.t, ph[i + 1]?.t ?? last])] : []));
   const step = yHi - yLo > 6 ? 2 : 1;
   const ticks = [];
   for (let n = Math.ceil(yLo / step) * step; n <= yHi; n += step) ticks.push({ y: y(n), text: `${n}°` });
   return {
     start, end, w: W, current: line('cur', false), target: line('tgt', true), bands: merged.map(band), labels, ticks,
-    fast: phaseBands(['fast']),
+    fast: line('fast', true, yR), rticks: pts.some((p) => p.fast != null) ? [rLo, Math.round((rLo + rHi) / 2), rHi].map((n) => ({ y: yR(n), text: `${fmt(n)}°` })) : [],
   };
 }
 
@@ -378,6 +389,15 @@ export const targetControl = (hass, cfg) => {
   const k = st(hass, eid(cfg, 'input_select', 'heating_target_control'));
   return CONTROLS.some(([id]) => id === k) ? k : 'buttons';
 };
+// The valve tiles' layout (input_select.heating_tile_layout_<c>): side = icon left of the name (default), stack = icon
+// above the name, which then gets the tile's whole width (three narrow tiles a row without two-line names).
+export const TILE_LAYOUTS = [['side', 'Vedle ikony'], ['stack', 'Pod ikonou']];
+export const tileLayout = (hass, cfg) => (st(hass, eid(cfg, 'input_select', 'heating_tile_layout')) === 'stack' ? 'stack' : 'side');
+const TILE_PIC = {
+  side: '<circle cx="12" cy="12" r="6" class="cp-on-f"/><rect x="21" y="7" width="20" height="4" rx="2" class="cp-trk-f"/><rect x="21" y="14" width="13" height="3" rx="1.5" class="cp-trk-f"/>',
+  stack: '<circle cx="14" cy="7" r="5" class="cp-on-f"/><rect x="9" y="14" width="30" height="4" rx="2" class="cp-trk-f"/><rect x="9" y="20" width="18" height="3" rx="1.5" class="cp-trk-f"/>',
+};
+const tilePic = (id) => `<svg class="cpic" width="48" height="24" viewBox="0 0 48 24" fill="none" aria-hidden="true">${TILE_PIC[id] ?? ''}</svg>`;
 const ARC = { w: 280, h: 214, cx: 140, cy: 112, r: 96, a0: 135, sw: 270 };
 export const RULER_PX = 48; // px per °C
 const DRAG_PX = 6; // movement before a press on a slider counts as a drag
@@ -409,10 +429,13 @@ export function tempColor(t) {
 // the scale as a CSS gradient across min..max
 const spectrum = (min, max) => `linear-gradient(90deg, ${[min, ...TEMP_STOPS.map(([T]) => T).filter((T) => T > min && T < max), max]
   .map((T) => `${tempColor(T)} ${Math.round(((T - min) / (max - min)) * 1000) / 10}%`).join(', ')})`;
-// v = valveView (min, max, now), t = the target shown
+// One box per control as design v8: the target and its − / + live in it (the dialog's target row hides).
+// v = valveView (climate, min, max, now, step, off), t = the target shown
 export function controlHtml(kind, v, t) {
   if (t == null) return '';
   const span = v.max - v.min, col = tempColor(t), r1 = (n) => Math.round(n * 10) / 10;
+  const step = v.step ?? STEP, tv = fmtTarget(t, step), nowT = v.now == null ? '–' : fmt(v.now, 1), dis = v.off ? ' disabled' : '';
+  const pm = (d) => `<button class="pm raised big" data-act="step" data-valve="${esc(v.climate ?? '')}" data-d="${d}" data-k="c${d}" aria-label="${d < 0 ? 'Snížit' : 'Zvýšit'} cíl o ${fmt(step, decimals(step))} °C"${dis}>${stroke(d < 0 ? 'M6 12h12' : 'M6 12h12M12 6v12', 16, 2.4)}</button>`;
   const wholes = []; for (let n = Math.ceil(v.min); n <= v.max; n++) wholes.push(n);
   if (kind === 'arc') {
     const ang = (x) => ARC.a0 + ((Math.min(v.max, Math.max(v.min, x)) - v.min) / span) * ARC.sw;
@@ -431,24 +454,28 @@ export function controlHtml(kind, v, t) {
   <circle cx="${pt(ARC.a0, ARC.r)[0]}" cy="${pt(ARC.a0, ARC.r)[1]}" r="9" fill="${tempColor(v.min)}"></circle>${segs.join('')}
   ${nowDot}<circle cx="${kx}" cy="${ky}" r="15" class="knob"></circle><circle cx="${kx}" cy="${ky}" r="6" fill="${col}"></circle>
   <text x="${pt(ARC.a0, ARC.r + 10)[0] - 8}" y="${ARC.h - 4}" class="end">${fmt(v.min)}°</text><text x="${pt(ARC.a0 + ARC.sw, ARC.r + 10)[0] + 8}" y="${ARC.h - 4}" text-anchor="end" class="end">${fmt(v.max)}°</text>
-</svg><div class="arc-c"><div class="lbl">teď</div><b>${v.now == null ? '–' : fmt(v.now, 1)}</b><small> °C</small></div></div>`;
+</svg><div class="arc-c"><div class="lbl">Cíl</div><b>${tv}</b><div class="lbl">°C · teď ${nowT}</div></div></div>
+<div class="ctl-pm">${pm(-1)}<span class="lbl">krok ${fmt(step, decimals(step))} °C</span>${pm(1)}</div>`;
   }
   if (kind === 'ruler') {
     const x = (n) => r1((n - v.min) * RULER_PX);
     const halves = []; for (let n = Math.ceil(v.min * 2) / 2; n <= v.max; n += 0.5) halves.push(n);
-    return `<div class="rl-in" style="transform: translateX(${-x(t)}px)">
+    return `<div class="ctl-head"><span class="lbl">Cíl</span><b class="tv-big" style="color: ${col}">${tv}</b><span class="u">°C</span></div>
+<div class="rl-win"><div class="rl-in" style="transform: translateX(${-x(t)}px)">
   <span class="rl-strip" style="width: ${x(v.max)}px; background: ${spectrum(v.min, v.max)}"></span>
   ${v.now == null ? '' : `<span class="rl-now" style="left: ${x(v.now) - 9}px"></span>`}
   ${halves.map((n) => `<span class="rl-t${Number.isInteger(n) ? ' w' : ''}" style="left: ${x(n)}px"></span>`).join('')}
   ${wholes.map((n) => `<span class="rl-l${Math.round(t) === n ? ' on' : ''}" style="left: ${x(n) - 20}px">${n}°</span>`).join('')}
-</div><span class="rl-needle" style="background: ${col}; box-shadow: 0 0 12px ${col}"></span>`;
+</div><span class="rl-needle" style="background: ${col}; box-shadow: 0 0 12px ${col}"></span></div>
+<div class="ctl-pm sp">${pm(-1)}<span class="lbl">teď ${nowT} °C · krok ${fmt(step, decimals(step))}</span>${pm(1)}</div>`;
   }
   const pct = (n) => `${r1(((Math.min(v.max, Math.max(v.min, n)) - v.min) / span) * 100)}%`;
-  return `<div class="tr"><div class="tr-bar"></div><div class="tr-fill" style="background: ${spectrum(v.min, v.max)}; clip-path: inset(0 max(0px, calc(100% - ${pct(t)} - 10px)) 0 0 round 10px); filter: drop-shadow(0 0 6px ${col})"></div>
+  return `<div class="ctl-head row"><div class="th"><div class="lbl">Cíl</div><b class="tv-mid">${tv}</b> <span class="u">°C</span></div>${pm(-1)}${pm(1)}</div>
+<div class="tr-win"><div class="tr"><div class="tr-bar"></div><div class="tr-fill" style="background: ${spectrum(v.min, v.max)}; clip-path: inset(0 max(0px, calc(100% - ${pct(t)} - 10px)) 0 0 round 10px); filter: drop-shadow(0 0 6px ${col})"></div>
   ${wholes.map((n) => `<span class="tr-t${n % 5 ? '' : ' w'}" style="left: ${pct(n)}"></span>`).join('')}
   ${v.now == null ? '' : `<span class="tr-now" style="left: ${pct(v.now)}"></span>`}
   <span class="tr-knob" style="left: ${pct(t)}"><i style="background: ${col}"></i></span>
-  <div class="tr-cap"><span>${fmt(v.min)} °C</span>${v.now == null ? '' : `<span>▲ teď ${fmt(v.now, 1)}</span>`}<span>${fmt(v.max)} °C</span></div></div>`;
+  <div class="tr-cap"><span>${fmt(v.min)} °C</span>${v.now == null ? '' : `<span>▲ teď ${fmt(v.now, 1)}</span>`}<span>${fmt(v.max)} °C</span></div></div></div>`;
 }
 
 const svg = (path, size, extra = '') => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" ${extra}><path d="${path}"></path></svg>`;
@@ -499,8 +526,8 @@ const BATTERY_PLAIN = 'M16.67,4H15V2H9V4H7.33A1.33,1.33 0 0,0 6,5.33V20.67C6,21.
 function chartHtml(m) {
   const font = 'font-size="11" style="fill: var(--c-text2)"';
   const W = m.w ?? CHART.w, view = m.view ?? { start: m.start, end: m.end };
-  const strip = (bs, cls) => bs.map((b) => `<rect class="${cls}" x="${b.x}" y="${CHART.bottom - 6}" width="${b.w}" height="6" rx="2"></rect>`).join('');
-  const legend = [m.bands.length && '<span><i class="lg win"></i>okno</span>', m.fast.length && '<span><i class="lg fast"></i>rychlý start</span>'].filter(Boolean).join('');
+  const legend = [m.bands.length && '<span><i class="lg win"></i>okno</span>', m.fast && '<span><i class="lg fast"></i>rychlý start · cíl vpravo</span>'].filter(Boolean).join('');
+  const axis = (ts, cls) => `<div class="${cls}" aria-hidden="true">${ts.map((t) => `<span style="top: ${Math.round((t.y / 140) * 1000) / 10}%">${t.text}</span>`).join('')}</div>`;
   const at = (t) => { const d = new Date(t); return `${d.getDate()}. ${d.getMonth() + 1}. ${d.getHours()}:00`; };
   const nav = `<div class="ch-nav"><span>${m.live ? 'Posledních 24 h' : `${at(view.start)} – ${at(view.end)}`}</span>
     <button class="x" data-act="chartNav" data-d="-1" data-k="chart:-1" aria-label="O 6 hodin zpět"${m.oldest ? ' disabled' : ''}>${stroke('M15 6l-6 6 6 6', 16)}</button>
@@ -508,16 +535,16 @@ function chartHtml(m) {
     ${m.live ? '' : '<button class="sb soft" data-act="chartNow" data-k="chart:now">Teď</button>'}</div>`;
   // the svg is W / CHART.w times the view's width, shifted so the view shows view.start..view.end
   const shift = Math.round(((view.start - m.start) / (m.end - m.start)) * 10000) / 100;
-  return `${nav}<div class="ch-box"><div class="ch-y" aria-hidden="true">${m.ticks.map((t) => `<span style="top: ${Math.round((t.y / 140) * 1000) / 10}%">${t.text}</span>`).join('')}</div>
+  return `${nav}<div class="ch-box${m.rticks?.length ? ' r' : ''}">${axis(m.ticks, 'ch-y')}
   <div class="ch-view"><svg viewBox="0 0 ${W} 140" style="width: ${Math.round((W / CHART.w) * 10000) / 100}%; transform: translateX(-${shift}%)" data-shift="${shift}" role="img" aria-label="Teplota a cíl, táhni do stran pro posun v čase" class="ch-svg">
   ${m.ticks.map((t) => `<line x1="0" y1="${t.y}" x2="${W}" y2="${t.y}" class="grid-l"></line>`).join('')}
   ${m.bands.map((b) => `<rect class="band" x="${b.x}" y="${CHART.top}" width="${b.w}" height="${CHART.bottom - CHART.top}" rx="4"></rect>`).join('')}
   <line x1="0" y1="${CHART.bottom}" x2="${W}" y2="${CHART.bottom}" style="stroke: var(--c-border)"></line>
-  ${strip(m.fast, 'ph-fast')}
+  ${m.fast ? `<path d="${m.fast}" fill="none" class="ph-fast-l" stroke-width="2" stroke-dasharray="2 3"></path>` : ''}
   ${m.target ? `<path d="${m.target}" fill="none" style="stroke: var(--disabled-text-color, #a9afb7)" stroke-width="2" stroke-dasharray="4 4"></path>` : ''}
   <path d="${m.current}" fill="none" stroke="#E8592C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
   ${m.labels.map((l) => `<text x="${Math.min(l.x, W - 28)}" y="132" ${font}>${l.text}</text>`).join('')}
-</svg></div></div>${legend ? `<div class="legend">${legend}</div>` : ''}`;
+</svg></div>${m.rticks?.length ? axis(m.rticks, 'ch-y ch-y2') : ''}</div>${legend ? `<div class="legend">${legend}</div>` : ''}`;
 }
 
 // The valve dialog in sections that are patched separately (so the buttons keep their nodes):
@@ -632,7 +659,7 @@ const CIRCUIT_ENTITIES = [
   ['input_datetime', 'heating_time_to'], ['input_number', 'heating_weather_threshold'], ['input_text', 'heating_status'],
   ['select', 'heating_program'], ['sensor', 'heating_program'], ['sensor', 'heating_applying'], ['sensor', 'heating_off_schedule'],
   ['sensor', 'heating_valves'], ['sensor', 'heating_low_batteries'], ['sensor', 'heating_outdoor_temperature'],
-  ['binary_sensor', 'heating_active'], ['binary_sensor', 'heating_state'],
+  ['binary_sensor', 'heating_active'], ['binary_sensor', 'heating_state'], ['input_select', 'heating_tile_layout'],
 ];
 export const watchedIds = (cfg) => [...CIRCUIT_ENTITIES.map(([d, n]) => eid(cfg, d, n)), ...cfg.valves];
 
@@ -930,6 +957,7 @@ const SETTINGS_TAB = {
     return {
       fields, circuitFields: fieldsOf(hass, cfg, ['step'], ctx), channel: cfg.circuit,
       control: hass.states?.[e('input_select', 'heating_target_control')] ? targetControl(hass, cfg) : null,
+      layout: hass.states?.[e('input_select', 'heating_tile_layout')] ? tileLayout(hass, cfg) : null,
       tiles: [
         { icon: ICON.radiator, label: 'Hlavice', value: String(cfg.valves.length), caption: low ? `${low} se slabou baterií` : 'žádná se slabou baterií' },
         { icon: WINDOW_CLOSED, label: 'Okenní čidla', value: String(all.length), caption: openWins ? `${openWins} otevřené` : 'žádné otevřené' },
@@ -1005,6 +1033,9 @@ const SETTINGS_BODY = {
   ${v.control ? `<div class="lbl ctl-h">Ovladač cíle v detailu hlavice</div>
   <div class="seg four" role="group" aria-label="Ovladač cíle">${CONTROLS.map(([id, label]) =>
     `<button data-act="control" data-val="${id}" data-k="control:${id}" aria-pressed="${v.control === id}" class="cbtn${v.control === id ? ' on' : ''}">${controlPic(id)}<span>${label}</span></button>`).join('')}</div>` : ''}
+  ${v.layout ? `<div class="lbl ctl-h">Název hlavice na dlaždici</div>
+  <div class="seg two" role="group" aria-label="Název hlavice na dlaždici">${TILE_LAYOUTS.map(([id, label]) =>
+    `<button data-act="tiles" data-val="${id}" data-k="tiles:${id}" aria-pressed="${v.layout === id}" class="cbtn${v.layout === id ? ' on' : ''}">${tilePic(id)}<span>${label}</span></button>`).join('')}</div>` : ''}
   ${v.circuitFields.length ? fieldList(v.circuitFields) : ''}
   <div class="vd-facts">${v.tiles.map((t) => `<div class="vd-tile"><div class="lbl"><span class="li">${svg(t.icon, 14)}</span>${esc(t.label)}</div><div class="fv${t.small ? ' s' : ''}">${esc(t.value)}</div><div class="cap">${esc(t.caption)}</div></div>`).join('')}</div>`,
 };
@@ -1453,7 +1484,7 @@ const DIALOGS = {
         boiler: [...['heating_fast_start_delta', 'heating_bypass_threshold', 'heating_close_margin', 'heating_bypass_overrun', 'heating_release_check']
           .map((n) => e('input_number', n)), e('sensor', 'heating_valves')],
         windows: [e('input_number', 'heating_window_reminder'), e('sensor', 'heating_off_schedule'), ...cfg.valves],
-        other: ['input_number.heating_low_battery_threshold', 'input_number.heating_status_duration', e('input_number', 'heating_target_step'), e('input_select', 'heating_target_control'), e('sensor', 'heating_low_batteries'),
+        other: ['input_number.heating_low_battery_threshold', 'input_number.heating_status_duration', e('input_number', 'heating_target_step'), e('input_select', 'heating_target_control'), e('input_select', 'heating_tile_layout'), e('sensor', 'heating_low_batteries'),
           e('sensor', 'heating_off_schedule'), e('switch', 'boiler'), e('sensor', 'heating_outdoor_temperature')],
       };
       return [...per[tab], e('binary_sensor', 'heating_state')].filter(Boolean);
@@ -1506,6 +1537,7 @@ button.dot { border: 0; padding: 0; cursor: pointer; font: inherit; }
 .head2 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; } .head2 .h { font-size: 15px; font-weight: 600; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 136px), 1fr)); gap: 8px; }
 .tile { padding: 10px 8px 8px 10px; display: flex; flex-direction: column; gap: 8px; background: var(--c-tile-bg); border: var(--c-tile-border); box-shadow: var(--c-tile-shadow); border-radius: var(--c-tile-radius); }
+.grid.stack .main { flex-direction: column; align-items: flex-start; gap: 6px; } .grid.stack .txt { width: 100%; }
 .tile > .ctl { margin-top: auto; } /* the − / + row at the bottom when a neighbour's name takes two lines */
 .tile.hot { background: var(--hfb-hot-tile, color-mix(in srgb, #E8592C 8%, var(--secondary-background-color, #f0f2f5))); }
 .main { display: flex; align-items: center; gap: 8px; cursor: pointer; outline-offset: 2px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
@@ -1546,19 +1578,25 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .vd-now .chip { background: var(--c-fill); margin-bottom: 8px; }
 .chip.low { background: color-mix(in srgb, var(--c-err) var(--hfb-alert-tint, 12%), transparent); color: var(--c-err); }
 .vd-target { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; } .vd-target > .tvw { flex: 1; }
-.vd-target.off > .tvw { opacity: .6; } .vd-target.slider > .pm { display: none; }
+.vd-target.off > .tvw { opacity: .6; } .vd-target.slider { display: none; }
 .ctl[hidden] { display: none; }
 .vd-tile.warn .fv { color: var(--warning-color, #B45309); }
 .ctl { flex: none; position: relative; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; outline-offset: 2px; }
 .ctl.off { opacity: .5; cursor: default; }
-.ctl.arc { display: flex; justify-content: center; padding: 12px 8px 8px; cursor: default; }
+.ctl.arc, .ctl.ruler, .ctl.track { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 14px 12px 12px; border-radius: 20px; cursor: default; }
+.ctl.arc { align-items: center; padding: 16px 12px 14px; }
+.ctl .lbl { font-size: 12px; color: var(--c-text2); } .ctl .u { font-size: 15px; color: var(--c-text2); }
+.ctl-pm { display: flex; align-items: center; justify-content: center; gap: 14px; } .ctl-pm.sp { justify-content: space-between; }
+.pm.big { width: 44px; height: 44px; border-radius: 12px; }
+.ctl-head { display: flex; align-items: baseline; justify-content: center; gap: 6px; } .ctl-head.row { align-items: center; gap: 10px; } .ctl-head .th { flex: 1; }
+.tv-big { font-size: 44px; font-weight: 700; letter-spacing: -1.5px; font-variant-numeric: tabular-nums; } .tv-mid { font-size: 30px; font-weight: 700; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
 .arc-box { position: relative; width: 100%; max-width: 280px; } .ctl svg.arc { width: 100%; display: block; }
 .knob-hit { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; touch-action: none; cursor: grab; z-index: 1; }
 .ctl .tk { stroke: var(--disabled-text-color, #a9afb7); } .ctl .trk { stroke: var(--c-card); } .ctl .knob { fill: #fff; filter: drop-shadow(0 2px 4px rgba(0,0,0,.3)); }
 .ctl .nowdot { fill: var(--c-text); stroke: #fff; stroke-width: 2; } .ctl .end { font-size: 11px; fill: var(--c-text2); }
-.arc-c { position: absolute; left: 0; right: 0; top: 38%; text-align: center; pointer-events: none; } .arc-c .lbl { font-size: 12px; color: var(--c-text2); }
-.arc-c b { font-size: 36px; font-weight: 700; letter-spacing: -1px; font-variant-numeric: tabular-nums; } .arc-c small { font-size: 13px; color: var(--c-text2); }
-.ctl.ruler { height: 84px; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent); mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent); }
+.arc-c { position: absolute; left: 0; right: 0; top: 34%; text-align: center; pointer-events: none; } .arc-c .lbl { font-size: 13px; color: var(--c-text2); }
+.arc-c b { display: block; font-size: 54px; font-weight: 700; letter-spacing: -2px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.rl-win { position: relative; height: 84px; overflow: hidden; cursor: grab; -webkit-mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent); mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent); }
 .rl-in { position: absolute; left: 50%; top: 0; height: 84px; width: 0; transition: transform .18s ease-out; } .ctl.drag .rl-in { transition: none; }
 .rl-t { position: absolute; top: 30px; width: 1.5px; height: 24px; margin-left: -.75px; border-radius: 2px; background: var(--disabled-text-color, #a9afb7); }
 .rl-t.w { top: 18px; width: 2.5px; height: 36px; margin-left: -1.25px; background: var(--c-text); }
@@ -1566,7 +1604,7 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .rl-strip { position: absolute; left: 0; top: 56px; height: 4px; border-radius: 2px; }
 .rl-now { position: absolute; top: 8px; width: 18px; height: 50px; border-radius: 6px; background: var(--info-color, #4F8FD6); opacity: .25; }
 .rl-needle { position: absolute; left: 50%; top: 4px; width: 4px; height: 58px; margin-left: -2px; border-radius: 2px; }
-.ctl.track { height: 78px; } .tr { position: absolute; left: 16px; right: 16px; top: 0; bottom: 0; pointer-events: none; }
+.tr-win { position: relative; height: 78px; cursor: grab; } .tr { position: absolute; left: 16px; right: 16px; top: 0; bottom: 0; pointer-events: none; }
 .tr-bar, .tr-fill { position: absolute; left: 0; top: 22px; height: 20px; border-radius: 10px; } .tr-bar { right: 0; background: var(--c-card); box-shadow: inset 0 1px 3px rgba(0,0,0,.12); }
 .tr-fill { right: 0; }
 .tr-t, .tr-now, .tr-knob { position: absolute; transform: translateX(-50%); }
@@ -1579,15 +1617,15 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .tv { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; } .tv small { font-size: 13px; font-weight: 500; color: var(--c-text2); }
 .pm.raised { background: var(--c-raised); box-shadow: var(--c-raised-sh); } .pm.raised:disabled { background: transparent; box-shadow: none; }
 .vd-chart { margin: 0; } .vd-chart svg { display: block; }
-.ch-box { display: grid; grid-template-columns: 30px minmax(0, 1fr); } .ch-view { overflow: hidden; }
-.ch-y { position: relative; font-size: 11px; color: var(--c-text2); } .ch-y span { position: absolute; right: 6px; transform: translateY(-50%); }
+.ch-box { display: grid; grid-template-columns: 30px minmax(0, 1fr); } .ch-box.r { grid-template-columns: 30px minmax(0, 1fr) 30px; } .ch-view { overflow: hidden; }
+.ch-y { position: relative; font-size: 11px; color: var(--c-text2); } .ch-y span { position: absolute; right: 6px; transform: translateY(-50%); } .ch-y2 span { right: auto; left: 6px; color: #D9822B; }
 .ch-svg { touch-action: pan-y; cursor: grab; user-select: none; -webkit-user-select: none; } .ch-svg:active { cursor: grabbing; }
 .ch-nav { display: flex; align-items: center; gap: 2px; font-size: 12px; color: var(--c-text2); margin-bottom: 2px; } .ch-nav > span { flex: 1; }
 .ch-nav .x { width: 32px; height: 32px; } .ch-nav .x:disabled { opacity: .3; cursor: default; } .ch-nav .sb { height: 28px; margin-left: 4px; }
 .band { fill: color-mix(in srgb, var(--info-color, #0a84ff) var(--hfb-alert-tint, 12%), transparent); }
-.grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; } .ph-fast { fill: #E8592C; }
+.grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; } .ph-fast-l { stroke: #F0A14B; }
 .legend { display: flex; gap: 12px; font-size: 11px; color: var(--c-text2); margin-top: 4px; } .legend span { display: inline-flex; align-items: center; gap: 4px; }
-.lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; } .lg.win { background: color-mix(in srgb, var(--info-color, #0a84ff) 30%, transparent); } .lg.fast { background: #E8592C; }
+.lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; } .lg.win { background: color-mix(in srgb, var(--info-color, #0a84ff) 30%, transparent); } .lg.fast { background: #F0A14B; }
 .chart-msg { font-size: 12px; color: var(--c-text2); padding: 40px 0; text-align: center; }
 .vd-h { font-size: 13px; font-weight: 600; margin-bottom: -6px; }
 .vd-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -1892,6 +1930,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     }
     this._set(this._wrap.querySelector('[data-p="box1"]'), parts.box1, 'box1');
     this._set(this._wrap.querySelector('[data-p="sum"]'), esc(parts.summary), 'sum');
+    this._wrap.querySelector('.grid').classList.toggle('stack', tileLayout(this._hass, this._cfg) === 'stack');
     this._wrap.querySelectorAll('.tw').forEach((el, i) => this._set(el, parts.tiles[i], `t${i}`));
     this._refreshDialog(true);
   }
@@ -2210,8 +2249,8 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     } else if (act === 'tab') { this._gdCtx.tab = b.dataset.val; this._refreshGeneric(true); }
     else if (act === 'chartNav') this._panChart(6 * Number(b.dataset.d));
     else if (act === 'chartNow') { this._chartEnd = null; this._showChartWindow(); }
-    else if (act === 'control') {
-      const id = eid(c, 'input_select', 'heating_target_control');
+    else if (act === 'control' || act === 'tiles') {
+      const id = eid(c, 'input_select', act === 'control' ? 'heating_target_control' : 'heating_tile_layout');
       if (st(this._hass, id) !== b.dataset.val) this._call('input_select', 'select_option', { entity_id: id, option: b.dataset.val });
     } else if (act === 'rule') {
       if (st(this._hass, eid(c, 'input_select', 'heating_auto_rule')) !== b.dataset.val) this._call('input_select', 'select_option', { entity_id: eid(c, 'input_select', 'heating_auto_rule'), option: b.dataset.val });
@@ -2256,7 +2295,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     const ctl = e.target.closest('.ctl');
     const kind = ctl && targetControl(this._hass, this._cfg);
     // the arc only from its knob (the rest of the box scrolls the sheet), the ruler and the track anywhere
-    if (ctl && this._vd && e.button <= 0 && !this._drag && (kind !== 'arc' || e.target.closest('.knob-hit'))) {
+    if (ctl && this._vd && e.button <= 0 && !this._drag && !e.target.closest('button') && (kind !== 'arc' || e.target.closest('.knob-hit'))) {
       const v = valveView(this._hass, this._cfg, this._vd);
       const t0 = currentTarget(v, this._pending);
       if (v.off || t0 == null) return;
