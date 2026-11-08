@@ -290,20 +290,24 @@
     && vd.querySelector('.vd-tile.low .fv').textContent === '14 %' && t('.vd-win .wn') === 'Okno balkon';
   r.vdFacts = [...vd.querySelectorAll('.vd-tile .fv')].map((e) => e.textContent).join('|') === '14 %|OK (−71 dBm)|12 %|V pořádku';
   r.vdWindows = vd.querySelectorAll('.vd-win').length === 2 && vd.querySelectorAll('.vd-h')[1].textContent === 'Okna (2)' && vd.querySelector('.vd-win .chip.low') && vd.querySelectorAll('.vd-win .chip').length === 2;
-  r.vdChart = !!vd.querySelector('.vd-chart svg path[stroke="#E8592C"]') && wsCalls.at(-1).entity_ids.length === 4 && vd.querySelectorAll('.band').length === 0 && vd.querySelectorAll('.ph-fast').length === 1 && vd.querySelectorAll('.vd-chart text[text-anchor="end"]').length > 1;
+  r.vdChart = !!vd.querySelector('.vd-chart svg path[stroke="#E8592C"]') && wsCalls.at(-1).entity_ids.length === 4 && vd.querySelectorAll('.band').length === 0 && vd.querySelectorAll('.ph-fast').length === 1 && vd.querySelectorAll('.ch-y span').length > 1;
   // chart window: ‹ goes 6 h back (whole hours), › and Teď come back; a drag right by a quarter of the plot = 6 h back
   const hourNow = Math.floor(Date.now() / 3600000) * 3600000;
-  const lastEnd = () => Date.parse(wsCalls.filter((m) => m.type === 'history/history_during_period').at(-1).end_time);
+  // the fetch covers 48 h before the window's end and 24 h after it (at most now)
+  const lastFetch = () => wsCalls.filter((m) => m.type === 'history/history_during_period').at(-1);
+  const lastEnd = () => Date.parse(lastFetch().start_time) + 48 * 3600000;
   r.vdChartLive = t('.ch-nav span') === 'Posledních 24 h' && vd.querySelector('[data-act="chartNav"][data-d="1"]').disabled && !vd.querySelector('[data-act="chartNow"]');
   vd.querySelector('[data-act="chartNav"][data-d="-1"]').click(); await tick(60);
   r.vdChartBack = lastEnd() === hourNow - 6 * 3600000 && t('.ch-nav span') !== 'Posledních 24 h' && !!vd.querySelector('[data-act="chartNow"]');
   vd.querySelector('[data-act="chartNow"]').click(); await tick(60);
-  const svgC = vd.querySelector('.ch-svg'), sr = svgC.getBoundingClientRect(), plotW = sr.width * 440 / 470;
+  const svgC = vd.querySelector('.ch-svg'), sr = svgC.parentElement.getBoundingClientRect(), plotW = sr.width;
+  // live: 48 h (a day back to pan into, nothing past now), the last 24 h shown
+  r.vdChartWide = Math.abs(svgC.getBoundingClientRect().width - 2 * sr.width) < 2 && svgC.style.transform === 'translateX(-50%)';
   const pc = (type, x) => svgC.dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, clientX: x, clientY: sr.top + 40 }));
   pc('pointerdown', sr.left + 100); pc('pointermove', sr.left + 100 + plotW / 4);
-  r.vdChartDragging = vd.querySelector('.ch-svg').style.transform.startsWith('translateX(');
+  r.vdChartDragging = vd.querySelector('.ch-svg').style.transform.startsWith('translateX(calc(');
   pc('pointerup', sr.left + 100 + plotW / 4); await tick(60);
-  r.vdChartDrag = lastEnd() === hourNow - 6 * 3600000;
+  r.vdChartDrag = lastEnd() === hourNow - 6 * 3600000 && Math.abs(parseFloat(vd.querySelector('.ch-svg').style.transform.slice(12)) - 2400 / (48 + (Date.now() - lastEnd()) / 3600000)) < 0.1; // 6 h back: 48 h before the end + up to now after it, 24 h before the shown day
   vd.querySelector('[data-act="chartNav"][data-d="1"]').click(); await tick(60);
   r.vdChartForward = t('.ch-nav span') === 'Posledních 24 h';
   r.vdStepEnabled = !vd.querySelector('[data-act="step"]').disabled;
