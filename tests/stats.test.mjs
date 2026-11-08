@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ranges, anchor, dataEnd, isoWeek, periodEnd, pct, degreeDays, analyzeStats, statBars, bucketCount, chipLabels, rangeLabel, explainText,
-  fetchStats, fetchStatsSet, statIds, statsHtml, statsParts, normalizeConfig, COMPARE,
+  fetchStats, fetchStatsSet, statIds, statsHtml, statsParts, normalizeConfig, COMPARE, hourFloor,
 } from '../dist/heating-card.js';
 
 const at = (y, m, d, h = 0, mi = 0) => new Date(y, m - 1, d, h, mi);
@@ -212,7 +212,8 @@ test('fetchStats: one call for several ids, rows normalised; fetchStatsSet: curr
   assert.equal(calls.length, 2);
   assert.deepEqual([calls[0].start_time, calls[0].end_time, calls[0].period], [at(2026, 11, 8).toISOString(), at(2026, 11, 8, 21).toISOString(), 'hour']);
   assert.deepEqual([calls[1].start_time, calls[1].end_time], [at(2026, 11, 7).toISOString(), at(2026, 11, 8).toISOString()]); // the whole previous day
-  assert.deepEqual(Object.keys(set.cur), ['boiler', 'windowBoiler', 'windowValves', 'outdoor']);
+  assert.deepEqual(Object.keys(set.cur), ['boiler', 'windowBoiler', 'windowValves', 'outdoor', 'tail']);
+  assert.equal(set.cur.tail, null); // a day is hourly already
   // rows by granularity; a past period ends at its end
   calls.length = 0;
   await fetchStatsSet(hass, cfg, { gran: 'year', offset: -1, cmp: 'prev' }, real);
@@ -223,6 +224,15 @@ test('fetchStats: one call for several ids, rows normalised; fetchStatsSet: curr
   calls.length = 0;
   await fetchStatsSet(hass, cfg, { gran: 'month', offset: 0, cmp: 'prev' }, real);
   assert.equal(calls[0].period, 'day');
+  // the partial day at the cut: hourly rows from its start to the cut, for both sides (Nov 8 00:00-21:00, Oct 8 00:00-21:00)
+  assert.deepEqual(calls.slice(2).map((m) => [m.period, m.start_time, m.end_time]), [
+    ['hour', at(2026, 11, 8).toISOString(), at(2026, 11, 8, 21).toISOString()], ['hour', at(2026, 10, 8).toISOString(), at(2026, 10, 8, 21).toISOString()]]);
+  calls.length = 0;
+  await fetchStatsSet(hass, cfg, { gran: 'year', offset: 0, cmp: 'prev' }, real); // the partial month
+  assert.deepEqual(calls.slice(2).map((m) => [m.period, m.start_time]), [['hour', at(2026, 11, 1).toISOString()], ['hour', at(2025, 11, 1).toISOString()]]);
+  calls.length = 0;
+  await fetchStatsSet(hass, cfg, { gran: 'month', offset: -1, cmp: 'prev' }, real);
+  assert.equal(calls.length, 2); // a whole past period needs no tail
 });
 
 const stView = (over = {}, data = null) => ({ title: 'Topení přízemí', st: { metric: 'boiler', gran: 'day', offset: 0, cmp: 'prev', norm: true, ...over }, data, real: at(2026, 11, 8, 21, 37) });
@@ -293,4 +303,81 @@ test('statsHtml: a week and a month render their buckets', () => {
   const w = statsHtml(stView({ gran: 'week' }, dataset(mk(8, 4), mk(8, 3))));
   assert.equal([...w.matchAll(/class="bk"/g)].length, 7);
   assert.match(w, />Po<.*>Ne</s);
+});
+
+// Identical usage in every hour (0.1 h, 5 °C) of the period and its comparison, as the recorder would return it: coarse rows
+// per `gran`, plus the hourly tail of the partial day / month at the cut (what fetchStatsSet fetches).
+function steady(gran, key, real) {
+  const hourly = (from, to) => { const o = []; for (let h = new Date(+from); h < to; h = new Date(+h + 3600000)) o.push({ start: h, end: new Date(+h + 3600000), change: 0.1, mean: 5, p: 'hour' }); return o; };
+  const coarse = (rows) => {
+    if (gran === 'day' || gran === 'week') return rows;
+    const m = new Map();
+    for (const r of rows) {
+      const k = gran === 'month' ? +at(r.start.getFullYear(), r.start.getMonth() + 1, r.start.getDate()) : +at(r.start.getFullYear(), r.start.getMonth() + 1, 1);
+      const g = m.get(k) ?? { start: new Date(gran === 'month' ? new Date(r.start.getFullYear(), r.start.getMonth(), r.start.getDate()) : new Date(r.start.getFullYear(), r.start.getMonth(), 1)), change: 0, n: 0, p: gran === 'month' ? 'day' : 'month' };
+      g.change += r.change; g.n++; m.set(k, g);
+    }
+    return [...m.values()].map((g) => ({ ...g, mean: 5 }));
+  };
+  const kinds = (rows, tail) => ({ boiler: rows, windowBoiler: rows.map((r) => ({ ...r, change: r.change / 5 })), windowValves: [], outdoor: rows, tail });
+  const fl = hourFloor(real), r = ranges(fl, gran);
+  const span = (rg) => (gran === 'month' || gran === 'year' ? [gran === 'month' ? new Date(rg[1].getFullYear(), rg[1].getMonth(), rg[1].getDate()) : new Date(rg[1].getFullYear(), rg[1].getMonth(), 1), rg[1]] : null);
+  const tail = (rg) => { const sp = span(rg); const rows = sp && +sp[0] < +sp[1] ? hourly(...sp) : null; return rows && kinds(rows, null); };
+  const cmpRg = r[key];
+  const whole = [cmpRg[0], periodEnd(gran, cmpRg[0])];
+  const mk = (rg, rows, tl) => ({ ...kinds(coarse(rows), null), tail: tl });
+  return { cur: mk(r.cur, hourly(...r.cur), tail(r.cur)), cmp: mk(cmpRg, hourly(...whole), tail(cmpRg)) };
+}
+
+test('like-for-like: identical usage compares equal at awkward times (day, week, month, year)', () => {
+  const times = [at(2026, 11, 8, 0, 30), at(2026, 11, 2, 1, 30), at(2026, 11, 9, 0, 30), at(2026, 12, 1, 0, 30), at(2026, 11, 8, 21, 37), at(2027, 1, 1, 0, 30), at(2027, 1, 2, 1, 30), at(2026, 11, 2, 0, 5)];
+  for (const real of times) {
+    for (const gran of ['day', 'week', 'month', 'year']) {
+      for (const key of COMPARE[gran]) {
+        const d = steady(gran, key, real);
+        const a = analyzeStats(gran, key, real, d.cur, d.cmp);
+        const label = `${gran}/${key} at ${real.toISOString()}`;
+        assert.ok(a.cur && a.cmp, label);
+        close(a.cur.boiler, a.cmp.boiler);
+        close(a.cur.windowBoiler, a.cmp.windowBoiler);
+        close(a.cur.hdd, a.cmp.hdd);
+        assert.ok(a.delta === null || Math.abs(a.delta) < 1e-6, `${label}: delta ${a.delta}`);
+        assert.ok(a.normDelta === null || Math.abs(a.normDelta) < 1e-6, `${label}: normDelta ${a.normDelta}`);
+        // the bars add up to the side numbers
+        close(statBars(gran, a.rows.cur.boiler, bucketCount(gran, a.r.cur[0]) + 7, [], false).reduce((s, b) => s + b.v, 0), a.cur.boiler);
+        close(statBars(gran, a.rows.cmp.boiler, bucketCount(gran, a.r.cur[0]) + 7, [], false).reduce((s, b) => s + b.v, 0), a.cmp.boiler);
+      }
+    }
+  }
+});
+
+test('like-for-like: the partial row is cut exactly (Rok on 2. 11. 01:30)', () => {
+  const d = steady('year', 'prev', at(2026, 11, 2, 1, 30));
+  const a = analyzeStats('year', 'prev', at(2026, 11, 2, 1, 30), d.cur, d.cmp);
+  close(a.cur.boiler, a.cmp.boiler);
+  assert.ok(a.cur.boiler > 0);
+  // without the hourly tail the partial month counts whole (the old skew): that is what the tail fixes
+  const coarse = analyzeStats('year', 'prev', at(2026, 11, 2, 1, 30), { ...d.cur, tail: null }, { ...d.cmp, tail: null });
+  assert.ok(Math.abs(coarse.delta) > 1);
+});
+
+test('the first hour of a period: 0 h against 0 h, not an empty state; no rows at all is empty', () => {
+  const real = at(2026, 11, 8, 0, 30);
+  const d = steady('day', 'prev', real);
+  assert.equal(d.cur.boiler.length, 0);
+  const a = analyzeStats('day', 'prev', real, d.cur, d.cmp);
+  assert.deepEqual([a.cur.boiler, a.cmp.boiler, a.diff, a.delta], [0, 0, 0, null]);
+  const v = { title: 'T', st: { metric: 'boiler', gran: 'day', offset: 0, cmp: 'prev', norm: true }, data: d, real };
+  assert.match(statsHtml(v), /<span class="hero">0,0<\/span>/);
+  const none = { boiler: [], windowBoiler: [], windowValves: [], outdoor: [], tail: null };
+  assert.match(statsHtml({ ...v, data: { cur: none, cmp: none } }), /Zatím tu nejsou žádná data\./);
+});
+
+test('Den chart: a 25-hour DST day grows the axis instead of overflowing', () => {
+  const rows = Array.from({ length: 25 }, (_, i) => ({ start: new Date(Date.UTC(2026, 9, 24, 22) + i * 3600000), end: new Date(Date.UTC(2026, 9, 24, 23) + i * 3600000), change: 1, mean: 5, p: 'hour' }));
+  const dup = rows.concat([{ ...rows[3], start: rows[3].start, change: 0.5 }]); // an hour with 1.5 h = 90 min
+  const real = at(2026, 10, 26, 3);
+  const h = statsHtml({ title: 'T', st: { metric: 'boiler', gran: 'day', offset: -1, cmp: 'prev', norm: true }, data: { cur: { boiler: dup, windowBoiler: [], windowValves: [], outdoor: [], tail: null }, cmp: null }, real });
+  const px = [...h.matchAll(/class="bk"><i style="height:([\d.]+)px/g)].map((m) => Number(m[1]));
+  assert.ok(Math.max(...px) <= 134);
 });

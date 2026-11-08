@@ -586,6 +586,11 @@
   r.stMonth = sd.querySelector('.st-lbl').textContent === 'Listopad 2026' && sd.querySelectorAll('.st-chart .bk').length === 30 && sd.querySelector('[data-act="nav"][data-d="1"]').disabled;
   sd.querySelector('[data-act="gran"][data-val="year"]').click(); await tick(100);
   r.stYear = sd.querySelector('.st-lbl').textContent === '2026' && sd.querySelectorAll('.st-chart .bk').length === 12 && sd.querySelectorAll('[data-act="cmp"]').length === 1 && sd.querySelector('.chip.on').textContent === '2025' && !!sd.querySelector('.hero');
+  // a failing background refresh keeps the numbers on screen
+  card.hass = { ...hass, callWS: async () => { throw new Error('no recorder'); } };
+  await card._loadStats(true); await tick();
+  r.stRefreshKeeps = !!sd.querySelector('.hero') && !sd.querySelector('.chart-msg');
+  card.hass = hass;
   sd.close(); await tick();
   // reopened: the selection starts again at Den, the switch stays off; a failing call shows the note, no exception
   card.hass = { ...hass, callWS: async () => { throw new Error('no recorder'); } }; await tick();

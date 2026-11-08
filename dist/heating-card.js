@@ -956,7 +956,7 @@ export function anchor(now, gran, offset) {
   return new Date(+periodEnd(gran, start) - 1);
 }
 
-const rowEnd = (r, period) => r.end ?? (period === 'hour' ? new Date(+r.start + HOUR_MS) : period === 'day' ? addDays(r.start, 1) : new Date(r.start.getFullYear(), r.start.getMonth() + 1, 1));
+const rowEnd = (r, period) => r.end ?? ((period = r.p ?? period) === 'hour' ? new Date(+r.start + HOUR_MS) : period === 'day' ? addDays(r.start, 1) : new Date(r.start.getFullYear(), r.start.getMonth() + 1, 1));
 
 // Where the current range's data ends: the end of its last row, never past the current full hour, never before the start.
 export function dataEnd(rows, start, now, period = 'hour') {
@@ -969,6 +969,7 @@ export const pct = (cur, prev) => (prev > 0 ? ((cur - prev) / prev) * 100 : null
 const localMs = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
 // A row's length in days: nominal (1/24, 1, the month's days; a DST change does not stretch it), shorter only when `end` cuts it.
 function rowDays(r, period, end) {
+  period = r.p ?? period; // rows know their own length (hourly tail rows next to daily ones)
   const full = period === 'hour' ? 1 / 24 : period === 'day' ? 1 : daysIn(r.start.getFullYear(), r.start.getMonth());
   if (end == null || +end >= +rowEnd(r, period)) return full;
   return Math.max(0, Math.min(full, (localMs(end) - localMs(r.start)) / DAY_MS));
@@ -992,30 +993,58 @@ function weightedMean(rows, period, end) {
 const sumChange = (rows) => rows.reduce((s, r) => s + Math.max(0, r.change || 0), 0); // a counter reset shows up as a negative row
 const hasRows = (d) => !!d && [d.boiler, d.windowBoiler, d.windowValves, d.outdoor].some((x) => x.length);
 
+const EMPTY = { boiler: [], windowBoiler: [], windowValves: [], outdoor: [] };
+const KINDS = Object.keys(EMPTY);
+
+// The rows of [from, to) of every kind. A coarse row (day / month) that the cut falls into is replaced by the finer
+// `tail` rows (hourly, fetched for exactly that span), so both periods are cut at the same offset.
+function cutRows(d, rg, period) {
+  const sel = {};
+  for (const k of KINDS) {
+    const rows = [];
+    let from = Infinity;
+    for (const x of d[k]) {
+      if (x.start < rg[0] || x.start >= rg[1]) continue;
+      if (d.tail && +rowEnd(x, period) > +rg[1]) from = Math.min(from, +x.start);
+      else rows.push(x);
+    }
+    if (d.tail) for (const x of d.tail[k]) if (+x.start >= from && x.start >= rg[0] && x.start < rg[1]) rows.push(x);
+    sel[k] = rows;
+  }
+  return sel;
+}
+
 // One period's numbers (hours of boiler runtime, window savings, outdoor mean, degree days) from `d` cut to [from, to).
 function statSide(d, rg, period) {
-  const cut = (rows) => rows.filter((x) => x.start >= rg[0] && x.start < rg[1]);
-  const out = cut(d.outdoor), boiler = sumChange(cut(d.boiler)), hdd = degreeDays(out, period, rg[1]);
+  const sel = cutRows(d, rg, period);
+  const boiler = sumChange(sel.boiler), hdd = degreeDays(sel.outdoor, period, rg[1]);
   return {
-    boiler, windowBoiler: sumChange(cut(d.windowBoiler)), windowValves: sumChange(cut(d.windowValves)),
-    outdoorMean: weightedMean(out, period, rg[1]), hdd, perHdd: hdd > 0 ? boiler / hdd : null,
+    sel,
+    side: {
+      boiler, windowBoiler: sumChange(sel.windowBoiler), windowValves: sumChange(sel.windowValves),
+      outdoorMean: weightedMean(sel.outdoor, period, rg[1]), hdd, perHdd: hdd > 0 ? boiler / hdd : null,
+    },
   };
 }
 
 // Like-for-like: cut both periods where the current data ends, then compare.
-// `key` = the comparison (prev | month | yoy), `cur` / `cmp` = {boiler, windowBoiler, windowValves, outdoor} rows.
-// ponytail: month / year rows are whole days / months, so the comparison's last day / month counts whole; hourly rows (day, week) are exact.
+// `key` = the comparison (prev | month | yoy), `cur` / `cmp` = {boiler, windowBoiler, windowValves, outdoor} rows, plus an optional
+// `tail` of the same shape (hourly rows of the partial day / month at the cut, for month / year granularity).
+// With no rows in the current range but some in the comparison (the first hour of a period) both sides are 0.
 export function analyzeStats(gran, key, now, cur, cmp) {
   const period = PERIOD[gran];
-  const all = cur ? [...cur.boiler, ...cur.windowBoiler, ...cur.windowValves, ...cur.outdoor] : [];
+  cur = cur ?? EMPTY;
+  const all = KINDS.flatMap((k) => cur[k]);
   const end = new Date(Math.min(+dataEnd(all, ranges(now, gran).cur[0], now, period), +now));
   const r = ranges(end, gran);
-  const c = hasRows(cur) ? statSide(cur, r.cur, period) : null;
-  const p = c && hasRows(cmp) && r[key] ? statSide(cmp, r[key], period) : null;
+  const any = hasRows(cur) || hasRows(cmp);
+  const c = any ? statSide(cur, r.cur, period) : null;
+  const p = any && hasRows(cmp) && r[key] ? statSide(cmp, r[key], period) : null;
+  const cs = c?.side ?? null, ps = p?.side ?? null;
   return {
-    end, r, cur: c, cmp: p,
-    delta: p ? pct(c.boiler, p.boiler) : null, diff: p ? c.boiler - p.boiler : null,
-    normDelta: p && c.perHdd != null && p.perHdd != null ? pct(c.perHdd, p.perHdd) : null,
+    end, r, cur: cs, cmp: ps, rows: { cur: c?.sel ?? EMPTY, cmp: p?.sel ?? EMPTY },
+    delta: ps ? pct(cs.boiler, ps.boiler) : null, diff: ps ? cs.boiler - ps.boiler : null,
+    normDelta: ps && cs.perHdd != null && ps.perHdd != null ? pct(cs.perHdd, ps.perHdd) : null,
   };
 }
 
@@ -1083,7 +1112,7 @@ export async function fetchStats(hass, ids, start, end, period, types = ['change
     type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: ids, period, types,
   });
   return Object.fromEntries(ids.map((id) => [id, (res?.[id] ?? []).map((x) => ({
-    start: new Date(x.start), end: x.end == null ? null : new Date(x.end), change: num(x.change) ?? 0, mean: num(x.mean),
+    start: new Date(x.start), end: x.end == null ? null : new Date(x.end), change: num(x.change) ?? 0, mean: num(x.mean), p: period,
   })).filter((r) => !Number.isNaN(+r.start))]));
 }
 
@@ -1093,17 +1122,26 @@ export const statIds = (cfg) => ({
 });
 
 // The current range and the selected comparison (whole; analyzeStats cuts it like-for-like): {cur, cmp} = {boiler, windowBoiler, windowValves, outdoor} rows.
+// For the current month / year the day / month row at the cut is partial: `tail` = hourly rows of just that span, for both sides.
 export async function fetchStatsSet(hass, cfg, s, real) {
   const a = anchor(real, s.gran, s.offset);
   const r = ranges(s.offset ? a : hourFloor(a), s.gran);
   const ids = statIds(cfg), list = Object.values(ids), period = PERIOD[s.gran];
   const shape = (res) => Object.fromEntries(Object.entries(ids).map(([k, id]) => [k, res[id]]));
   const cr = r[s.cmp];
-  const [cur, cmp] = await Promise.all([
+  const tailSpan = (cut) => {
+    if (s.offset || !cut || (s.gran !== 'month' && s.gran !== 'year')) return null;
+    const from = s.gran === 'month' ? new Date(cut.getFullYear(), cut.getMonth(), cut.getDate()) : new Date(cut.getFullYear(), cut.getMonth(), 1);
+    return +from < +cut ? [from, cut] : null;
+  };
+  const tail = (span) => (span ? fetchStats(hass, list, span[0], span[1], 'hour') : Promise.resolve(null));
+  const [cur, cmp, curTail, cmpTail] = await Promise.all([
     fetchStats(hass, list, r.cur[0], new Date(+r.cur[1] + (s.offset ? 1 : 0)), period),
     cr ? fetchStats(hass, list, cr[0], periodEnd(s.gran, cr[0]), period) : Promise.resolve(null),
+    tail(tailSpan(r.cur[1])), tail(cr && tailSpan(cr[1])),
   ]);
-  return { cur: shape(cur), cmp: cmp && shape(cmp) };
+  const side = (res, tl) => ({ ...shape(res), tail: tl && shape(tl) });
+  return { cur: side(cur, curTail), cmp: cmp && side(cmp, cmpTail) };
 }
 
 const signed = (n, d) => (Number(n.toFixed(d)) === 0 ? fmt(0, d) : (n < 0 ? '−' : '+') + fmt(Math.abs(n), d));
@@ -1128,7 +1166,7 @@ const xLabels = (gran, n) => (gran === 'day' ? [0, 6, 12, 18, 24].map((h) => [(h
 function statChart(o) {
   const H = 134;
   const n = o.cur.length;
-  const bars = o.cur.map((b, i) => `<div class="bk"><i style="height:${((b.v / o.max) * H).toFixed(1)}px;background:${o.color}"></i><i style="height:${(((o.prev[i]?.v ?? 0) / o.max) * H).toFixed(1)}px;background:var(--st-prev)"></i></div>`).join('');
+  const bars = o.cur.map((b, i) => `<div class="bk"><i style="height:${(Math.min(1, b.v / o.max) * H).toFixed(1)}px;background:${o.color}"></i><i style="height:${(Math.min(1, (o.prev[i]?.v ?? 0) / o.max) * H).toFixed(1)}px;background:var(--st-prev)"></i></div>`).join('');
   let line = '', right = '';
   if (o.outdoor) {
     const ts = o.cur.map((b) => b.t).filter((t) => t != null);
@@ -1172,9 +1210,10 @@ const STATS_BODY = {
     }
     const text = st.norm ? explainText(a, c.subject, c.cmpLabel) : '';
     const n = Math.max(bucketCount(st.gran, a.r.cur[0]), a.r[st.cmp] ? bucketCount(st.gran, a.r[st.cmp][0]) : 0);
-    const bars = statBars(st.gran, v.data.cur.boiler, n, v.data.cur.outdoor);
-    const prev = statBars(st.gran, v.data.cmp?.boiler ?? [], n);
-    const max = st.gran === 'day' ? 60 : niceMax(Math.max(...bars.map((b) => b.v), ...prev.map((b) => b.v)));
+    const bars = statBars(st.gran, a.rows.cur.boiler, n, a.rows.cur.outdoor);
+    const prev = statBars(st.gran, a.rows.cmp.boiler, n);
+    const high = Math.max(...bars.map((b) => b.v), ...prev.map((b) => b.v));
+    const max = st.gran === 'day' && high <= 60 ? 60 : niceMax(high); // a DST day has a 25th hour: the axis grows with it
     const unitHint = { day: 'min za hodinu', week: 'h za den', month: 'h za den', year: 'h za měsíc' }[st.gran];
     return `<div class="fld soft"><div class="fl"><div class="t">Přepočítat na venkovní teplotu</div><div class="help">Srovnání na denostupeň: chladnější ${st.gran === 'day' ? 'den' : 'období'} smí topit víc.</div></div>
       <button class="sw${st.norm ? ' on' : ''}" role="switch" aria-checked="${st.norm}" aria-label="Přepočítat na venkovní teplotu" data-act="norm" data-k="norm"></button></div>
@@ -1194,8 +1233,8 @@ const STATS_BODY = {
     const { st } = v, cur = a.cur, p = a.cmp;
     const diff = p ? cur.windowBoiler - p.windowBoiler : null;
     const n = Math.max(bucketCount(st.gran, a.r.cur[0]), a.r[st.cmp] ? bucketCount(st.gran, a.r[st.cmp][0]) : 0);
-    const bars = statBars(st.gran, v.data.cur.windowValves, n, [], false);
-    const prev = statBars(st.gran, v.data.cmp?.windowValves ?? [], n, [], false);
+    const bars = statBars(st.gran, a.rows.cur.windowValves, n, [], false);
+    const prev = statBars(st.gran, a.rows.cmp.windowValves, n, [], false);
     const share = cur.boiler > 0 ? `${fmt(Math.round((cur.windowBoiler / cur.boiler) * 100))} % běhu` : '';
     return `${heroHtml(`Kotel stál kvůli oknům · ${c.noun}`, fmt(cur.windowBoiler, 1), cap(c.cmpLabel), hours(p?.windowBoiler))}
     ${p ? `<div class="chips tight">${delta(diff < 0, `${diff >= 0 ? '▲' : '▼'} ${signed(diff, 1)} h ušetřeno`)}</div>` : ''}
@@ -1462,7 +1501,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     this._vdlg = this.shadowRoot.querySelector('dialog.vd:not(.gd)');
     this._gdlg = this.shadowRoot.querySelector('dialog.gd');
     this._gd = null; // the generic dialog's kind (a DIALOGS key) while it is open
-    this._gdCtx = { calendars: [], pending: null, nums: {}, sources: [], tab: 'rule', st: this._st, sdata: null, scache: {} };
+    this._gdCtx = { calendars: [], pending: null, nums: {}, sources: [], tab: 'rule', st: null, sdata: null, skey: null, scache: {} };
     this._vd = null; // the valve whose dialog is open
     this._chart = null; // chartModel() result, 'none' or null (loading)
     this._seq = 0; // drops stale history responses
@@ -1688,13 +1727,18 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     // the calendar.* ids and the outdoor temperature sources are resolved once; the dialog re-reads only their states
     this._gdCtx = {
       calendars: Object.keys(this._hass.states ?? {}).filter((id) => id.startsWith('calendar.')), pending: null,
-      nums: {}, sources: outdoorSources(this._hass), tab: 'rule', st: this._st, sdata: null, scache: {},
+      nums: {}, sources: outdoorSources(this._hass), tab: 'rule', st: this._st, sdata: null, skey: null, scache: {},
     };
     if (kind === 'stats') Object.assign(this._st, { metric: 'boiler', gran: 'day', offset: 0, cmp: 'prev' }); // `norm` is kept
     this._gdlg.setAttribute('aria-label', DIALOGS[kind].label);
     clearInterval(this._gt);
     let n = 0; // every minute: "dnes" / "včera" roll over at midnight; every 5th: the statistics of the current period
-    this._gt = setInterval(() => { if (kind === 'stats' && ++n % 5 === 0 && !this._st.offset) this._loadStats(true); else this._refreshGeneric(true); }, 60000);
+    this._gt = setInterval(() => {
+      if (kind !== 'stats') this._refreshGeneric(true);
+      else if (this._gdCtx.skey && this._statKey() !== this._gdCtx.skey) this._loadStats(); // midnight: another day / week / month
+      else if (++n % 5 === 0 && !this._st.offset) this._loadStats(true);
+      else this._refreshGeneric(true);
+    }, 60000);
     for (const k of Object.keys(this._last)) if (k.startsWith('gd:')) delete this._last[k];
     this._gdlg.replaceChildren();
     if (!this._gdlg.open) this._gdlg.showModal();
@@ -1702,26 +1746,35 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     if (kind === 'stats') this._loadStats();
   }
 
-  // The statistics of the selected period and comparison (cached per selection; the current period for 5 minutes).
-  // `force` re-fetches and keeps showing the old numbers meanwhile.
+  // Cache key of the selection: the period's resolved start (so a new day / week is a new key), not its offset.
+  _statKey() {
+    const s = this._st;
+    return `${s.gran}|${+ranges(anchor(new Date(), s.gran, s.offset), s.gran).cur[0]}|${s.cmp}`;
+  }
+
+  // The statistics of the selected period and comparison (cached per selection; what was fetched while the period was
+  // still running for 5 minutes). `force` = a background refresh: it keeps the numbers on screen, also when it fails.
   async _loadStats(force = false) {
     const ctx = this._gdCtx, s = { ...this._st };
-    const key = `${s.gran}|${s.offset}|${s.cmp}`;
+    const key = this._statKey();
     const hit = ctx.scache[key];
     if (!force) {
-      const fresh = hit && (s.offset || Date.now() - hit.at < STATS_TTL);
+      const fresh = hit && (hit.final || Date.now() - hit.at < STATS_TTL);
       ctx.sdata = fresh ? hit.data : null;
+      ctx.skey = fresh ? key : null;
       this._refreshGeneric(true);
       if (fresh) { this._sseq++; return; }
     }
     const seq = ++this._sseq;
-    let data = 'none';
+    let data = null;
     try {
       data = await fetchStatsSet(this._hass, this._cfg, s, new Date());
-      ctx.scache[key] = { at: Date.now(), data };
-    } catch (e) { /* the dialog says the statistics are not available */ }
+      ctx.scache[key] = { at: Date.now(), data, final: !!s.offset };
+    } catch (e) { /* see below */ }
     if (seq !== this._sseq || ctx !== this._gdCtx || this._gd !== 'stats') return;
-    ctx.sdata = data;
+    if (!data && force && ctx.sdata && ctx.sdata !== 'none') return; // a failed refresh leaves the numbers
+    ctx.sdata = data ?? 'none';
+    ctx.skey = data ? key : null;
     this._refreshGeneric(true);
   }
 
