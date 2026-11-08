@@ -10,7 +10,7 @@ A Home Assistant card for one heating circuit, in the Homecraft look: a circuit 
 
 **HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/heating-card`, type **Dashboard** → download **Heating Card** → reload the browser.
 
-**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.0-beta.4`, type **JavaScript module**). Change `?v=` after copying a new version.
+**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.0-beta.5`, type **JavaScript module**). Change `?v=` after copying a new version.
 
 ## Configuration
 
