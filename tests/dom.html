@@ -313,12 +313,36 @@
   r.vdCtlHidden = vd.querySelector('.ctl').hidden;
   card.hass = { ...hass, states: { ...states, [`input_select.heating_target_control_${C}`]: { state: 'track', attributes: {} } } }; await tick();
   const ctl = vd.querySelector('.ctl'), tr = ctl.querySelector('.tr').getBoundingClientRect();
-  const pe = (type, fx) => ctl.dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, clientX: tr.left + tr.width * fx, clientY: tr.top + 30 }));
+  const pe = (type, fx, pointerId = 1) => ctl.dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, pointerId, clientX: tr.left + tr.width * fx, clientY: tr.top + 30 }));
   const ctlCalls = calls.length;
-  pe('pointerdown', 0.3); pe('pointermove', 0.61);
-  r.vdCtlDrag = !ctl.hidden && t('.tv') === '20,5 °C' && calls.length === ctlCalls && ctl.getAttribute('aria-valuenow') === '20.5';
-  pe('pointerup', 0.61); await tick();
+  // a tap (no movement) sends nothing and does not jump the value
+  pe('pointerdown', 0.9); pe('pointerup', 0.9); await tick();
+  r.vdCtlTap = calls.length === ctlCalls && t('.tv') === '19,5 °C';
+  // Esc (dialog closed) mid-drag sends nothing: reopen afterwards
+  pe('pointerdown', 0.3); pe('pointermove', 0.8);
+  r.vdCtlEscMoved = t('.tv') !== '19,5 °C';
+  vd.close(); await tick(); pe('pointerup', 0.8); await tick();
+  r.vdCtlEsc = calls.length === ctlCalls;
+  await press($$('.main')[7].querySelector('.dot')); await tick(200);
+  const ctl2 = vd.querySelector('.ctl');
+  r.vdCtlReopen = !!ctl2 && !ctl2.hidden;
+  const pe2 = (type, fx, pointerId = 1) => vd.querySelector('.ctl').dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, pointerId, clientX: tr.left + tr.width * fx, clientY: tr.top + 30 }));
+  // a second finger is ignored
+  pe2('pointerdown', 0.3); pe2('pointermove', 0.61); pe2('pointermove', 0.95, 2); pe2('pointerup', 0.95, 2);
+  r.vdCtlOtherFinger = t('.tv') === '20,5 °C' && calls.length === ctlCalls;
+  r.vdCtlDrag = !vd.querySelector('.ctl').hidden && t('.tv') === '20,5 °C' && calls.length === ctlCalls && vd.querySelector('.ctl').getAttribute('aria-valuenow') === '20.5';
+  pe2('pointerup', 0.61); await tick();
   r.vdCtlSet = calls.length === ctlCalls + 1 && JSON.stringify(calls.at(-1).data) === JSON.stringify({ entity_id: ids.dressing, temperature: 20.5 });
+  // arc: only the knob starts a drag (the rest of the box scrolls the sheet)
+  card.hass = { ...hass, states: { ...states, [`input_select.heating_target_control_${C}`]: { state: 'arc', attributes: {} } } }; await tick(100);
+  const arcCtl = vd.querySelector('.ctl'), box = arcCtl.querySelector('.arc-box').getBoundingClientRect(), hit = arcCtl.querySelector('.knob-hit');
+  const pa = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, pointerId: 3, clientX: x, clientY: y }));
+  const arcCalls = calls.length, before = t('.tv');
+  pa(arcCtl.querySelector('svg'), 'pointerdown', box.left + box.width / 2, box.top + 20); pa(arcCtl, 'pointermove', box.left + 10, box.top + box.height * 0.6); pa(arcCtl, 'pointerup', box.left + 10, box.top + box.height * 0.6); await tick();
+  r.vdArcBodyIgnored = calls.length === arcCalls && t('.tv') === before;
+  const hr = hit.getBoundingClientRect();
+  pa(hit, 'pointerdown', hr.left + 22, hr.top + 22); pa(arcCtl, 'pointermove', box.left + box.width / 2, box.top + 4); pa(arcCtl, 'pointerup', box.left + box.width / 2, box.top + 4); await tick();
+  r.vdArcKnob = calls.length === arcCalls + 1 && calls.at(-1).data.temperature === 17.5;
   card.hass = hass; await tick();
   vd.querySelector('[data-act="calibrate"]').click(); await tick();
   r.vdCalibrate = confirms.at(-1).startsWith('Kalibrovat hlavici?') && JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'script', service: `heating_calibrate_${C}`, data: { climate: ids.dressing } });

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { clockText, settingsView, settingsHtml, numField, stepNum, outdoorSources, programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural, signalWord, controlValue, controlHtml, targetControl, snapTarget, RULER_PX, tempColor } from '../dist/heating-card.js';
+import { clockText, settingsView, settingsHtml, numField, stepNum, outdoorSources, programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural, signalWord, controlValue, controlHtml, targetControl, snapTarget, RULER_PX, tempColor, stepOf, fmtTarget, currentTarget } from '../dist/heating-card.js';
 
 const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/states.json', import.meta.url), 'utf8'));
 const C = 'circuit_demo';
@@ -714,4 +714,15 @@ test('tempColor: fixed to the temperature, a fill never stretches it', () => {
   // track: the same gradient whatever the value, only its clip moves
   const bg = (t) => /tr-fill" style="background: ([^;]+);/.exec(controlHtml('track', v, t))[1];
   assert.equal(bg(12), bg(25));
+});
+
+test('stepOf, fmtTarget, currentTarget', () => {
+  assert.deepEqual([stepOf(0.2), stepOf(0), stepOf(-1), stepOf(null), stepOf(NaN)], [0.2, 0.5, 0.5, 0.5, 0.5]);
+  assert.equal(valveView(world({ [`input_number.heating_target_step_${C}`]: { state: '0' } }), CFG, K).step, 0.5);
+  assert.deepEqual([fmtTarget(21.25, 0.25), fmtTarget(21, 0.5), fmtTarget(21, 1), fmtTarget(null)], ['21,25', '21,0', '21,0', '–']);
+  const v = { climate: K, target: 21 };
+  assert.equal(currentTarget(v, {}, 1000), 21);
+  assert.equal(currentTarget(v, { [K]: { t: 22, at: 1000 } }, 1100), 22);
+  assert.equal(currentTarget(v, { [K]: { t: 21, at: 1000 } }, 1100), 21); // hass reported it
+  assert.equal(currentTarget(v, { [K]: { t: 22, at: 1000 } }, 1000 + 5001), 21); // expired
 });

@@ -101,6 +101,11 @@ export function batteryText(b) {
   return `${label} ${b.state} %`;
 }
 
+// The circuit's ± step: only a positive helper value counts, else 0.5 (not target_temp_step: valves report 0.1, their resolution).
+export const stepOf = (x) => (x > 0 ? x : STEP);
+// A target with the step's decimals, at least one (step 0.25: 21,25).
+export const fmtTarget = (t, step = STEP) => (t == null ? '–' : fmt(t, Math.max(1, (String(step).split('.')[1] ?? '').length)));
+
 // One valve tile: phase (window > off > fast > run > closed > heat > idle), state line, battery rows.
 export function valveView(hass, cfg, climate) {
   const attrs = hass.states?.[climate]?.attributes ?? {};
@@ -124,7 +129,7 @@ export function valveView(hass, cfg, climate) {
   }
   return {
     climate, name: attrs.friendly_name || climate.split('.')[1], phase, word, state, now, target: num(attrs.temperature),
-    min: num(attrs.min_temp) ?? 5, max: num(attrs.max_temp) ?? 30, step: num(st(hass, eid(cfg, 'input_number', 'heating_target_step'))) ?? STEP, // not target_temp_step: valves report 0.1 (their resolution)
+    min: num(attrs.min_temp) ?? 5, max: num(attrs.max_temp) ?? 30, step: stepOf(num(st(hass, eid(cfg, 'input_number', 'heating_target_step')))),
     off: phase === 'window' || phase === 'off', lowBattery,
   };
 }
@@ -342,9 +347,13 @@ export const zoneHandlers = (zones, zone) => (zone === 'icon' ? { ...zones.body,
 
 // A pending ± target is dropped once hass reports it or after 5 s.
 export const PENDING_MS = 5000;
-export function nextTarget(v, pending, dir, now = Date.now()) {
+// The target the next change starts from: a pending sent value until hass reports it or PENDING_MS pass.
+export function currentTarget(v, pending, now = Date.now()) {
   const p = pending?.[v.climate];
-  const base = p && now - p.at < PENDING_MS && p.t !== v.target ? p.t : v.target;
+  return p && now - p.at < PENDING_MS && p.t !== v.target ? p.t : v.target;
+}
+export function nextTarget(v, pending, dir, now = Date.now()) {
+  const base = currentTarget(v, pending, now);
   return base == null ? null : Math.round(Math.min(v.max, Math.max(v.min, base + (v.step ?? STEP) * dir)) * 100) / 100;
 }
 
@@ -357,6 +366,7 @@ export const targetControl = (hass, cfg) => {
 };
 const ARC = { w: 280, h: 214, cx: 140, cy: 112, r: 96, a0: 135, sw: 270 };
 export const RULER_PX = 48; // px per °C
+const DRAG_PX = 6; // movement before a press on a slider counts as a drag
 // v = {min, max, step}; snapped to the step, clamped, no float noise
 export const snapTarget = (v, x) => Number(Math.min(v.max, Math.max(v.min, Math.round(x / v.step) * v.step)).toFixed(2));
 // The value under the pointer: arc / track from its position in the box (fx, fy = 0..1), ruler from the drag (dx px since t0).
@@ -402,12 +412,12 @@ export function controlHtml(kind, v, t) {
     }
     const ticks = wholes.map((n) => { const a = ang(n), [x1, y1] = pt(a, ARC.r + 14), [x2, y2] = pt(a, ARC.r + (n % 5 ? 18 : 22)); return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${n % 5 ? 1 : 2}" class="tk"></line>`; }).join('');
     const nowDot = v.now == null ? '' : (([x, y]) => `<circle cx="${x}" cy="${y}" r="5" class="nowdot"></circle>`)(pt(ang(v.now), ARC.r - 22));
-    return `<svg viewBox="0 0 ${ARC.w} ${ARC.h}" class="arc" aria-hidden="true">
+    return `<div class="arc-box"><span class="knob-hit" style="left: ${r1((kx / ARC.w) * 100)}%; top: ${r1((ky / ARC.h) * 100)}%"></span><svg viewBox="0 0 ${ARC.w} ${ARC.h}" class="arc" aria-hidden="true">
   ${ticks}<path d="${arc(ARC.a0, ARC.a0 + ARC.sw)}" class="trk" stroke-width="18" stroke-linecap="round" fill="none"></path>
   <circle cx="${pt(ARC.a0, ARC.r)[0]}" cy="${pt(ARC.a0, ARC.r)[1]}" r="9" fill="${tempColor(v.min)}"></circle>${segs.join('')}
   ${nowDot}<circle cx="${kx}" cy="${ky}" r="15" class="knob"></circle><circle cx="${kx}" cy="${ky}" r="6" fill="${col}"></circle>
   <text x="${pt(ARC.a0, ARC.r + 10)[0] - 8}" y="${ARC.h - 4}" class="end">${fmt(v.min)}°</text><text x="${pt(ARC.a0 + ARC.sw, ARC.r + 10)[0] + 8}" y="${ARC.h - 4}" text-anchor="end" class="end">${fmt(v.max)}°</text>
-</svg><div class="arc-c"><div class="lbl">teď</div><b>${v.now == null ? '–' : fmt(v.now, 1)}</b><small> °C</small></div>`;
+</svg><div class="arc-c"><div class="lbl">teď</div><b>${v.now == null ? '–' : fmt(v.now, 1)}</b><small> °C</small></div></div>`;
   }
   if (kind === 'ruler') {
     const x = (n) => r1((n - v.min) * RULER_PX);
@@ -449,7 +459,7 @@ function tileHtml(v, cfg) {
   const flame = v.phase === 'heat' || v.phase === 'fast';
   const cls = ['tile', flame && 'hot', v.off && 'off'].filter(Boolean).join(' ');
   const bat = v.lowBattery.length > 0;
-  const fmtT = (t) => (t == null ? '–' : fmt(t, 1));
+  const fmtT = (t) => fmtTarget(t, v.step);
   const glyph = `${svg(PHASE_ICON[v.phase], 20, flame ? 'class="flame"' : '')}${bat ? `<span class="badge blink">${svg(ICON.battery, 12)}</span>` : ''}`;
   const q = esc(v.climate);
   // the icon circle is its own button (info), the text is the tile's button (schedule); each only when its action is not `none`
@@ -499,11 +509,11 @@ export function detailParts(d, chart = 'loading') {
   const v = d.view;
   const bat = d.battery?.low || v.lowBattery.some((b) => b.source === 'valve');
   const badged = v.lowBattery.length > 0;
-  const fmtT = (t) => (t == null ? '–' : fmt(t, 1));
+  const fmtT = (t) => fmtTarget(t, v.step);
   const alert = d.alert ? `<div class="alert ${d.alert.kind === 'window' ? 'info' : 'error'} vd-alert" role="status">${d.alert.kind === 'window' ? svg(ICON.window, 18) : svg(ICON.battery, 18, 'class="blink"')}<span><b>${esc(d.alert.title)}</b>${esc(d.alert.text)}</span></div>` : '';
   const facts = [
     ['Baterie', d.battery ? `${fmt(d.battery.value)} %` : '—', bat],
-    ['Signál brány', d.signal == null ? '—' : `${signalWord(d.signal)} (${d.signal < 0 ? '−' : ''}${fmt(Math.abs(d.signal))} dBm)`, d.signal < -85],
+    ['Signál brány', d.signal == null ? '—' : `${signalWord(d.signal)} (${d.signal < 0 ? '−' : ''}${fmt(Math.abs(d.signal))} dBm)`, d.signal < -85 ? 'warn' : false],
     ['Ventil', d.position == null ? '—' : `${fmt(d.position)} %`, false],
     ['Kalibrace', d.calibration === 'needed' ? 'Nutná' : d.calibration === 'ok' ? 'V pořádku' : '—', d.calibration === 'needed'],
   ];
@@ -515,7 +525,8 @@ export function detailParts(d, chart = 'loading') {
     now: `<div><div class="sub">Teplota teď · ${esc(v.word.toLowerCase())}</div><div><b class="hero">${v.now == null ? '–' : fmt(v.now, 1)}</b> <span class="unit big">°C</span></div></div>`,
     tv: `<div class="lbl">${v.phase === 'window' ? 'Cíl · platí po zavření okna' : 'Cíl'}</div><div class="tv">${fmtT(v.target)} <small>°C</small></div>`,
     chart: chart === 'loading' ? '<div class="chart-msg">Načítám historii…</div>' : chart === 'none' ? '<div class="chart-msg">Historie není k dispozici.</div>' : chartHtml(chart),
-    facts: facts.map(([l, val, low]) => `<div class="vd-tile${low ? ' low' : ''}"><div class="lbl">${l}</div><div class="fv${low ? ' blink' : ''}">${esc(val)}</div></div>`).join(''),
+    // level true = low (red, blinks: the battery), 'warn' = a calm amber value (weak signal)
+    facts: facts.map(([l, val, lvl]) => `<div class="vd-tile${lvl === true ? ' low' : lvl ? ` ${lvl}` : ''}"><div class="lbl">${l}</div><div class="fv${lvl === true ? ' blink' : ''}">${esc(val)}</div></div>`).join(''),
     wins: d.windows.length ? `<div class="vd-h">Okna (${d.windows.length})</div>
   <div class="vd-wins">${d.windows.map((w) => `<div class="vd-win">
     <span class="dot ${w.kind === 'open' ? 'winopen' : 'idle'}">${svg(w.kind === 'open' ? ICON.window : WINDOW_CLOSED, 18)}</span>
@@ -1514,9 +1525,12 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .vd-target { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; } .vd-target > .tvw { flex: 1; }
 .vd-target.off > .tvw { opacity: .6; }
 .ctl[hidden] { display: none; }
-.ctl { flex: none; position: relative; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; outline-offset: 2px; }
+.vd-tile.warn .fv { color: var(--warning-color, #B45309); }
+.ctl { flex: none; position: relative; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; outline-offset: 2px; }
 .ctl.off { opacity: .5; cursor: default; }
-.ctl.arc { display: flex; justify-content: center; padding: 12px 8px 8px; } .ctl svg.arc { width: 100%; max-width: 280px; display: block; }
+.ctl.arc { display: flex; justify-content: center; padding: 12px 8px 8px; cursor: default; }
+.arc-box { position: relative; width: 100%; max-width: 280px; } .ctl svg.arc { width: 100%; display: block; }
+.knob-hit { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; touch-action: none; cursor: grab; z-index: 1; }
 .ctl .tk { stroke: var(--disabled-text-color, #a9afb7); } .ctl .trk { stroke: var(--c-card); } .ctl .knob { fill: #fff; filter: drop-shadow(0 2px 4px rgba(0,0,0,.3)); }
 .ctl .nowdot { fill: var(--c-text); stroke: #fff; stroke-width: 2; } .ctl .end { font-size: 11px; fill: var(--c-text2); }
 .arc-c { position: absolute; left: 0; right: 0; top: 38%; text-align: center; pointer-events: none; } .arc-c .lbl { font-size: 12px; color: var(--c-text2); }
@@ -1660,13 +1674,32 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     const root = this.shadowRoot;
     root.addEventListener('click', (e) => this._onClick(e));
     root.addEventListener('pointerdown', (e) => this._down(e));
+    // a drag / pan belongs to the pointer that started it; other fingers are ignored
+    const mine = (x, e) => x && x.id === e.pointerId;
     root.addEventListener('pointermove', (e) => {
-      if (this._drag) this._dragTo(this._ctlFrom(e));
-      else if (this._pan) this._pan.el.style.transform = `translateX(${e.clientX - this._pan.x0}px)`;
+      const d = this._drag;
+      if (mine(d, e)) {
+        if (!d.moved && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < DRAG_PX) return; // a tap is not a drag
+        d.moved = true;
+        this._dragTo(this._ctlFrom(e));
+      } else if (mine(this._pan, e)) this._pan.el.style.transform = `translateX(${e.clientX - this._pan.x0}px)`;
     });
-    root.addEventListener('pointerup', (e) => { this._panEnd(e); this._dragEnd(true); this._up(); });
-    root.addEventListener('pointercancel', () => { this._panEnd(null); this._dragEnd(false); this._cancel(); this._release(); });
-    root.addEventListener('lostpointercapture', () => this._cancel());
+    root.addEventListener('pointerup', (e) => {
+      if (mine(this._pan, e)) this._panEnd(e);
+      if (mine(this._drag, e)) this._dragEnd(true);
+      this._up();
+    });
+    root.addEventListener('pointercancel', (e) => {
+      if (mine(this._pan, e)) this._panEnd(null);
+      if (mine(this._drag, e)) this._dragEnd(false);
+      this._cancel(); this._release();
+    });
+    root.addEventListener('lostpointercapture', (e) => {
+      // fires after pointerup too (state already cleared); otherwise the drag was taken away: drop it
+      if (mine(this._pan, e)) this._panEnd(null);
+      if (mine(this._drag, e)) this._dragEnd(false);
+      this._cancel();
+    });
     root.addEventListener('pointerout', (e) => { // the pointer left the pressed tile
       const g = this._g;
       if (g && !g.main.contains(e.relatedTarget)) this._cancel();
@@ -1712,6 +1745,8 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
       });
     }
     this._vdlg.addEventListener('close', () => {
+      this._drag = null; // Esc mid-drag: nothing is sent
+      this._pan = null;
       if (this._vdlg.open) return; // reopened before this event ran
       clearInterval(this._vt);
       this._seq++;
@@ -1861,7 +1896,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     if (el.hidden) return;
     el.className = `soft ctl ${kind}${v.off ? ' off' : ''}${this._drag ? ' drag' : ''}`;
     el.setAttribute('aria-valuemin', v.min); el.setAttribute('aria-valuemax', v.max);
-    el.setAttribute('aria-valuenow', t); el.setAttribute('aria-valuetext', `${fmt(t, 1)} °C`);
+    el.setAttribute('aria-valuenow', t); el.setAttribute('aria-valuetext', `${fmtTarget(t, v.step)} °C`);
     el.setAttribute('aria-disabled', String(v.off));
     this._set(el, controlHtml(kind, v, t), 'vd:ctl');
   }
@@ -1877,7 +1912,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
   }
 
   _ctlFrom(e) {
-    const d = this._drag, r = (d.el.querySelector('.tr, svg.arc') ?? d.el).getBoundingClientRect(); // the track's inner box or the arc's svg
+    const d = this._drag, r = (d.el.querySelector('.tr, .arc-box') ?? d.el).getBoundingClientRect(); // the track's inner box or the arc's box
     return controlValue(d.kind, d.v, { fx: (e.clientX - r.left) / r.width, fy: (e.clientY - r.top) / r.height, dx: e.clientX - d.x0, t0: d.t0 });
   }
 
@@ -1887,20 +1922,26 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     d.t = t;
     this._paintCtl(d.v, t);
     const tv = this._vdlg.querySelector('[data-p="tv"] .tv');
-    if (tv) { tv.innerHTML = `${fmt(t, 1)} <small>°C</small>`; this._last['vd:tv'] = null; }
+    if (tv) { tv.innerHTML = `${fmtTarget(t, d.v.step)} <small>°C</small>`; this._last['vd:tv'] = null; }
   }
 
-  // released: one set_temperature with the last value, held as pending like a ± tap
+  // One set_temperature, held as pending (the card and the dialog show it) until hass reports it or PENDING_MS pass.
+  _setTarget(climate, t) {
+    this._pending[climate] = { t, at: Date.now() };
+    this._call('climate', 'set_temperature', { entity_id: climate, temperature: t });
+    clearTimeout(this._pt);
+    this._pt = setTimeout(() => this._request(), PENDING_MS + 50);
+    this._render();
+  }
+
+  // released: one set_temperature with the last value, only after a real drag (a tap or a scroll attempt sends nothing)
   _dragEnd(commit) {
     const d = this._drag;
     if (!d) return;
     this._drag = null;
-    if (!commit || d.t === d.t0) { this._dirty = true; return; }
-    this._pending[d.v.climate] = { t: d.t, at: Date.now() };
-    this._call('climate', 'set_temperature', { entity_id: d.v.climate, temperature: d.t });
-    clearTimeout(this._pt);
-    this._pt = setTimeout(() => this._request(), PENDING_MS + 50);
     this._dirty = true;
+    // the dialog closed meanwhile (Esc; its close event may not have run yet) or shows another valve: nothing is sent
+    if (commit && d.moved && d.t !== d.t0 && this._vdlg.open && d.v.climate === this._vd) this._setTarget(d.v.climate, d.t);
   }
 
   // The generic dialog (program, settings; stats later): head + body patched only when a watched state changed.
@@ -2127,12 +2168,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
       if (v.off) return;
       // quick taps add up: the next step starts from the last value sent, until hass reports it
       const t = nextTarget(v, this._pending, Number(b.dataset.d));
-      if (t == null) return;
-      this._pending[v.climate] = { t, at: Date.now() };
-      this._call('climate', 'set_temperature', { entity_id: v.climate, temperature: t });
-      clearTimeout(this._pt);
-      this._pt = setTimeout(() => this._request(), PENDING_MS + 50);
-      this._render();
+      if (t != null) this._setTarget(v.climate, t);
     }
   }
 
@@ -2144,18 +2180,18 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     const svgEl = e.target.closest('.ch-svg');
     if (svgEl && this._vd && e.button <= 0) {
       try { svgEl.setPointerCapture(e.pointerId); } catch { /* a pointer that is gone already */ }
-      this._pan = { el: svgEl, x0: e.clientX, w: svgEl.getBoundingClientRect().width * (CHART.w / (CHART.w + 30)) };
+      this._pan = { id: e.pointerId, el: svgEl, x0: e.clientX, w: svgEl.getBoundingClientRect().width * (CHART.w / (CHART.w + 30)) };
       return;
     }
     const ctl = e.target.closest('.ctl');
-    if (ctl && this._vd && e.button <= 0) {
+    const kind = ctl && targetControl(this._hass, this._cfg);
+    // the arc only from its knob (the rest of the box scrolls the sheet), the ruler and the track anywhere
+    if (ctl && this._vd && e.button <= 0 && !this._drag && (kind !== 'arc' || e.target.closest('.knob-hit'))) {
       const v = valveView(this._hass, this._cfg, this._vd);
-      const p = this._pending[v.climate];
-      const t0 = p && Date.now() - p.at < PENDING_MS ? p.t : v.target;
+      const t0 = currentTarget(v, this._pending);
       if (v.off || t0 == null) return;
       try { ctl.setPointerCapture(e.pointerId); } catch { /* a pointer that is gone already */ }
-      this._drag = { el: ctl, kind: targetControl(this._hass, this._cfg), v, t0, t: t0, x0: e.clientX };
-      if (this._drag.kind !== 'ruler') this._dragTo(this._ctlFrom(e));
+      this._drag = { id: e.pointerId, el: ctl, kind, v, t0, t: t0, x0: e.clientX, y0: e.clientY, moved: false };
       return;
     }
     const main = e.target.closest('.main');
