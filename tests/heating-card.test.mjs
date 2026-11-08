@@ -726,3 +726,17 @@ test('stepOf, fmtTarget, currentTarget', () => {
   assert.equal(currentTarget(v, { [K]: { t: 21, at: 1000 } }, 1100), 21); // hass reported it
   assert.equal(currentTarget(v, { [K]: { t: 22, at: 1000 } }, 1000 + 5001), 21); // expired
 });
+
+test('chartModel: forced targets (max / min) leave the line and the y scale; 72 h is 3× wide; nothing past now', () => {
+  const end = Date.parse('2026-11-08T12:00:00');
+  const h = (n) => (end - n * 3600000) / 1000;
+  const a = (cur, t) => ({ current_temperature: cur, temperature: t, min_temp: 5, max_temp: 30 });
+  const rows = [{ lu: h(24), a: a(19, 20) }, { lu: h(12), a: a(19.5, 30) }, { lu: h(10), a: a(20.5, 21) }, { lu: h(6), a: a(20, 5) }, { lu: h(4), a: a(19.8, 21) }];
+  const m = chartModel(rows, [], end);
+  assert.deepEqual(m.ticks.map((t) => t.text), ['18°', '19°', '20°', '21°', '22°']); // no 5° … 30°
+  assert.equal((m.target.match(/M/g) ?? []).length, 3); // three pieces around the two forced spans
+  assert.match(m.target, /^M0 \S+ H220 M256\.7 /); // stops where 30 starts, resumes at 21
+  const wide = chartModel(rows, [], end + 24 * 3600000, 72, [], '', end);
+  assert.equal(wide.w, 1320);
+  assert.match(wide.current, / L880 [\d.]+$/); // the last value holds until now (2/3 of 72 h), not to the end
+});
