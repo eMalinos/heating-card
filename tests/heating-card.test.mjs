@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural } from '../dist/heating-card.js';
+import { programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural } from '../dist/heating-card.js';
 
 const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/states.json', import.meta.url), 'utf8'));
 const C = 'circuit_demo';
@@ -339,4 +339,111 @@ test('valveDetail: unparsable since, battery names, unknown circuit state', () =
   assert.equal(unknown.view.word, 'Stav neznámý');
   assert.match(detailHtml(unknown), /Teplota teď · stav neznámý/);
   assert.equal((detailHtml(unknown).match(/data-act="step"[^>]* disabled/g) || []).length, 2);
+});
+
+test('programView: names, current, icons, detail line', () => {
+  const v = programView(world(), CFG);
+  assert.deepEqual(v.programs.map((p) => [p.id, p.name, p.current]), [['auto', 'Výchozí', true], ['vacation', 'Dovolená', false]]);
+  assert.equal(v.programs[0].detail, 'rozvrh hlavic · lichý týden');
+  assert.equal(v.programs[1].detail, '');
+  assert.equal(programView(world({ [`input_boolean.heating_week_alternation_${C}`]: { state: 'off' } }), CFG).programs[0].detail, 'rozvrh hlavic');
+  // a name that program_names lacks falls back to the id; unknown ids get the generic icon
+  const x = programView(world({ [`select.heating_program_${C}`]: { attributes: { options: ['auto', 'sick_day', 'home_office'] } } }), CFG);
+  assert.deepEqual(x.programs.map((p) => p.name), ['Výchozí', 'sick_day', 'home_office']);
+  assert.notEqual(x.programs[1].icon, x.programs[2].icon);
+  // the sensor is unavailable: the select's state is the current program
+  const w = world({ [`sensor.heating_program_${C}`]: { state: 'unavailable' }, [`select.heating_program_${C}`]: { state: 'vacation' } });
+  assert.equal(programId(w, CFG), 'vacation');
+  assert.equal(programView(w, CFG).current, 'vacation');
+  assert.equal(programId(world({ [`sensor.heating_program_${C}`]: { state: 'unavailable' }, [`select.heating_program_${C}`]: { state: 'unavailable' } }), CFG), null);
+  // no select at all: only the default program
+  const bare = world(); delete bare.states[`select.heating_program_${C}`];
+  assert.deepEqual(programView(bare, CFG).programs.map((p) => p.id), ['auto']);
+});
+
+test('programView: applying progress', () => {
+  const ap = (trigger, left) => ({ [`sensor.heating_applying_${C}`]: { state: 'applying', attributes: { trigger, left } } });
+  assert.deepEqual(programView(world(ap('program', 3)), CFG).applying, { trigger: 'program', name: 'Výchozí', progress: '0 ze 3' });
+  const seven = normalizeConfig({ circuit: C, valves: [K, B, O, 'climate.a', 'climate.b', 'climate.c', 'climate.d'] });
+  const v = programView(world(ap('program', 3)), seven);
+  assert.equal(v.applying.progress, '4 ze 7');
+  assert.equal(v.tiles.schedule.caption, 'zbytek se nastavuje');
+  assert.equal(programView(world(ap('sync', 3)), seven).syncing, true);
+  assert.equal(programView(world(), CFG).applying, null);
+  assert.equal(programView(world(ap('other', 3)), CFG).applying, null);
+  assert.match(programHtml(v), /Nastavuji hlavice podle programu <b>Výchozí<\/b> · 4 ze 7/);
+  assert.match(programHtml(programView(world(ap('sync', 3)), seven)), /Srovnávám hlavice · 4 ze 7/);
+});
+
+test('programView: week, holidays, calendar, tiles', () => {
+  const v = programView(world(), CFG);
+  assert.equal(v.title, 'Přízemí');
+  assert.equal(v.alternation, true);
+  assert.equal(v.weekLabel, 'Teď lichý (45.)');
+  assert.equal(v.holidays, 'calendar');
+  assert.equal(v.calendar, 'calendar.holidays_cz');
+  assert.deepEqual(v.calendars, [{ id: 'calendar.holidays_cz', name: 'Svátky ČR' }]);
+  assert.equal(v.nextHoliday, '17. 11. Den boje za svobodu');
+  assert.equal(v.tiles.schedule.value, '3 ze 3');
+  assert.equal(v.tiles.schedule.caption, 'všechny');
+  const off = programView(world({ [`sensor.heating_off_schedule_${C}`]: { state: '2' } }), CFG).tiles.schedule;
+  assert.deepEqual(off, { value: '1 ze 3', caption: '2 mimo rozvrh' });
+  const even = programView(world({ [`sensor.heating_schedule_${C}`]: { attributes: { week: 'even', week_number: 46, holidays_next: [] } } }), CFG);
+  assert.equal(even.weekLabel, 'Teď sudý (46.)');
+  assert.equal(even.nextHoliday, '');
+  // missing helpers: rows hidden, no exception
+  const bare = world();
+  for (const id of Object.keys(bare.states)) if (/heating_(week|holiday|schedule)|^calendar\./.test(id)) delete bare.states[id];
+  const b = programView(bare, CFG);
+  assert.deepEqual([b.alternation, b.holidays, b.weekLabel, b.nextHoliday, b.calendars.length], [null, null, '', '', 0]);
+  assert.doesNotMatch(programHtml(b), /data-act="alternation"|data-act="holidays"|data-act="calendar"/);
+  // a calendar that is set but no longer exists stays selectable
+  assert.equal(programView(world({ [`input_text.heating_holiday_calendar_${C}`]: { state: 'calendar.gone' } }), CFG).calendars.at(-1).id, 'calendar.gone');
+});
+
+test('whenText: today, yesterday, older', () => {
+  const now = new Date(2026, 10, 8, 20, 0).getTime();
+  const at = (d, h, m) => new Date(2026, 10, d, h, m).toISOString();
+  assert.equal(whenText(at(8, 18, 2), now), 'dnes 18:02');
+  assert.equal(whenText(at(7, 7, 5), now), 'včera 7:05');
+  assert.equal(whenText(at(1, 9, 30), now), '1. 11. 9:30');
+  assert.equal(whenText(undefined, now), '—');
+  assert.equal(whenText('garbage', now), '—');
+  assert.equal(programView(world(), CFG, now).tiles.changed.value, '—'); // the fixture has no last_changed
+  const w = world(); w.states[`sensor.heating_program_${C}`].last_changed = at(8, 18, 2);
+  assert.equal(programView(w, CFG, now).tiles.changed.value, 'dnes 18:02');
+});
+
+test('programHtml: one checked radio, calendar select only with holidays = calendar', () => {
+  const html = programHtml(programView(world(), CFG));
+  assert.equal((html.match(/role="radio"[^>]*aria-checked="true"/g) || []).length, 1);
+  assert.equal((html.match(/role="radio"/g) || []).length, 2);
+  assert.match(html, /<option value="calendar.holidays_cz" selected>/);
+  const none = programHtml(programView(world({ [`input_select.heating_holidays_${C}`]: { state: 'none' } }), CFG));
+  assert.doesNotMatch(none, /data-act="calendar"/);
+  assert.match(none, /data-val="none"[^>]*aria-pressed="true"/);
+  assert.match(none, /data-act="programs"/);
+  assert.match(programParts(programView(world(), CFG)).head, /class="vd-title">Program</);
+});
+
+test('programView: missing select is read-only, unknown holidays press nothing, no calendar helper = no row', () => {
+  const noSel = world(); delete noSel.states[`select.heating_program_${C}`];
+  const v = programView(noSel, CFG);
+  assert.equal(v.selectable, false);
+  const html = programHtml(v);
+  assert.match(html, /role="radio"[^>]* disabled/);
+  assert.match(html, /Program nejde přepnout/);
+  assert.doesNotMatch(programHtml(programView(world(), CFG)), /role="radio"[^>]* disabled/);
+  for (const state of ['unavailable', 'unknown', '']) {
+    const u = programView(world({ [`input_select.heating_holidays_${C}`]: { state } }), CFG);
+    assert.equal(u.holidays, '');
+    const h = programHtml(u);
+    assert.doesNotMatch(h, /aria-pressed="true"/);
+    assert.doesNotMatch(h, /data-act="calendar"/);
+    assert.match(h, /data-act="holidays"/);
+  }
+  const noCal = world(); delete noCal.states[`input_text.heating_holiday_calendar_${C}`];
+  assert.doesNotMatch(programHtml(programView(noCal, CFG)), /data-act="calendar"/);
+  // a pending program is shown as current
+  assert.equal(programView(world(), CFG, Date.now(), undefined, 'vacation').programs.find((p) => p.current).id, 'vacation');
 });
