@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.0-beta.4';
+const VERSION = '0.1.0-beta.5';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -30,6 +30,26 @@ const ICON = {
   check: 'M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z',
   sync: 'M12,18A6,6 0 0,1 6,12C6,11 6.25,10.03 6.7,9.2L5.24,7.74C4.46,8.97 4,10.43 4,12A8,8 0 0,0 12,20V23L16,19L12,15M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12C18,13 17.75,13.97 17.3,14.8L18.76,16.26C19.54,15.03 20,13.57 20,12A8,8 0 0,0 12,4Z',
   pencil: 'M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z',
+  cog: 'M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z',
+  thermoLow: 'M15 13V5A3 3 0 0 0 9 5V13A5 5 0 1 0 15 13M12 4A1 1 0 0 1 13 5V12H11V5A1 1 0 0 1 12 4Z',
+  cloudOutline: 'M12.74,5.47C15.1,6.5 16.35,9.03 15.92,11.46C17.19,12.56 18,14.19 18,16V16.17C18.31,16.06 18.65,16 19,16A3,3 0 0,1 22,19A3,3 0 0,1 19,22H6A4,4 0 0,1 2,18A4,4 0 0,1 6,14H6.27C5,12.45 4.6,10.24 5.5,8.26C6.72,5.5 9.97,4.24 12.74,5.47M11.93,7.3C10.16,6.5 8.09,7.31 7.31,9.07C6.85,10.09 6.93,11.22 7.41,12.13C8.5,10.83 10.16,10 12,10C12.7,10 13.38,10.12 14,10.34C13.94,9.06 13.18,7.86 11.93,7.3M13.55,3.64C13,3.4 12.45,3.23 11.88,3.12L14.37,1.82L15.27,4.71C14.76,4.29 14.19,3.93 13.55,3.64M6.09,4.44C5.6,4.79 5.17,5.19 4.8,5.63L4.91,2.82L7.87,3.5C7.25,3.71 6.65,4.03 6.09,4.44M18,9.71C17.91,9.12 17.78,8.55 17.59,8L19.97,9.5L17.92,11.73C18.03,11.08 18.05,10.4 18,9.71M3.04,11.3C3.11,11.9 3.24,12.47 3.43,13L1.06,11.5L3.1,9.28C3,9.93 2.97,10.61 3.04,11.3M19,18H16V16A4,4 0 0,0 12,12A4,4 0 0,0 8,16H6A2,2 0 0,0 4,18A2,2 0 0,0 6,20H19A1,1 0 0,0 20,19A1,1 0 0,0 19,18Z',
+  chevron: 'M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z',
+  clockStart: 'M12,1C8.14,1 5,4.14 5,8A7,7 0 0,0 12,15C15.86,15 19,11.87 19,8C19,4.14 15.86,1 12,1M12,3.15C14.67,3.15 16.85,5.32 16.85,8C16.85,10.68 14.67,12.85 12,12.85A4.85,4.85 0 0,1 7.15,8A4.85,4.85 0 0,1 12,3.15M11,5V8.69L14.19,10.53L14.94,9.23L12.5,7.82V5M4,16V24H6V21H18V24L22,20L18,16V19H6V16',
+  clockEnd: 'M12,1C8.14,1 5,4.14 5,8A7,7 0 0,0 12,15C15.86,15 19,11.87 19,8C19,4.14 15.86,1 12,1M12,3.15C14.67,3.15 16.85,5.32 16.85,8C16.85,10.68 14.67,12.85 12,12.85A4.85,4.85 0 0,1 7.15,8A4.85,4.85 0 0,1 12,3.15M11,5V8.69L14.19,10.53L14.94,9.23L12.5,7.82V5M15,16V19H3V21H15V24L19,20M19,20V24H21V16H19',
+  rocket: 'M13.13 22.19L11.5 18.36C13.07 17.78 14.54 17 15.9 16.09L13.13 22.19M5.64 12.5L1.81 10.87L7.91 8.1C7 9.46 6.22 10.93 5.64 12.5M19.22 4C19.5 4 19.75 4 19.96 4.05C20.13 5.44 19.94 8.3 16.66 11.58C14.96 13.29 12.93 14.6 10.65 15.47L8.5 13.37C9.42 11.06 10.73 9.03 12.42 7.34C15.18 4.58 17.64 4 19.22 4M19.22 2C17.24 2 14.24 2.69 11 5.93C8.81 8.12 7.5 10.53 6.65 12.64C6.37 13.39 6.56 14.21 7.11 14.77L9.24 16.89C9.62 17.27 10.13 17.5 10.66 17.5C10.89 17.5 11.13 17.44 11.36 17.35C13.5 16.53 15.88 15.19 18.07 13C23.73 7.34 21.61 2.39 21.61 2.39S20.7 2 19.22 2M14.54 9.46C13.76 8.68 13.76 7.41 14.54 6.63S16.59 5.85 17.37 6.63C18.14 7.41 18.15 8.68 17.37 9.46C16.59 10.24 15.32 10.24 14.54 9.46M8.88 16.53L7.47 15.12L8.88 16.53M6.24 22L9.88 18.36C9.54 18.27 9.21 18.12 8.91 17.91L4.83 22H6.24M2 22H3.41L8.18 17.24L6.76 15.83L2 20.59V22M2 19.17L6.09 15.09C5.88 14.79 5.73 14.47 5.64 14.12L2 17.76V19.17Z',
+  valve: 'M4 22H2V2H4M22 2H20V22H22M17.24 5.34L13.24 9.34A3 3 0 0 0 9.24 13.34L5.24 17.34L6.66 18.76L10.66 14.76A3 3 0 0 0 14.66 10.76L18.66 6.76Z',
+  thermoUp: 'M17.41 11.83L20.58 15L22 13.59L17.41 9L12.82 13.59L14.24 15L17.41 11.83M10 13V5C10 3.34 8.66 2 7 2S4 3.34 4 5V13C1.79 14.66 1.34 17.79 3 20S7.79 22.66 10 21 12.66 16.21 11 14C10.72 13.62 10.38 13.28 10 13M7 4C7.55 4 8 4.45 8 5V8H6V5C6 4.45 6.45 4 7 4Z',
+  pump: 'M2 21V15H3.5C3.18 14.06 3 13.05 3 12C3 7.03 7.03 3 12 3H22V9H20.5C20.82 9.94 21 10.95 21 12C21 16.97 16.97 21 12 21H2M5 12C5 13.28 5.34 14.47 5.94 15.5L9.4 13.5C9.15 13.06 9 12.55 9 12C9 11.35 9.21 10.75 9.56 10.26L6.3 7.93C5.5 9.08 5 10.5 5 12M12 19C14.59 19 16.85 17.59 18.06 15.5L14.6 13.5C14.08 14.4 13.11 15 12 15L11.71 15L11.33 18.97L12 19M12 9C13.21 9 14.26 9.72 14.73 10.76L18.37 9.1C17.27 6.68 14.83 5 12 5V9M12 11C11.45 11 11 11.45 11 12C11 12.55 11.45 13 12 13C12.55 13 13 12.55 13 12C13 11.45 12.55 11 12 11Z',
+  timerSand: 'M18 22H6V16L10 12L6 8V2H18V8L14 12L18 16M8 7.5L12 11.5L16 7.5V4H8M12 12.5L8 16.5V20H16V16.5M14 18H10V17.2L12 15.2L14 17.2Z',
+  bellRing: 'M10,21H14A2,2 0 0,1 12,23A2,2 0 0,1 10,21M21,19V20H3V19L5,17V11C5,7.9 7.03,5.17 10,4.29C10,4.19 10,4.1 10,4A2,2 0 0,1 12,2A2,2 0 0,1 14,4C14,4.1 14,4.19 14,4.29C16.97,5.17 19,7.9 19,11V17L21,19M17,11A5,5 0 0,0 12,6A5,5 0 0,0 7,11V18H17V11M19.75,3.19L18.33,4.61C20.04,6.3 21,8.6 21,11H23C23,8.07 21.84,5.25 19.75,3.19M1,11H3C3,8.6 3.96,6.3 5.67,4.61L4.25,3.19C2.16,5.25 1,8.07 1,11Z',
+  radiator: 'M7.95,3L6.53,5.19L7.95,7.4H7.94L5.95,10.5L4.22,9.6L5.64,7.39L4.22,5.19L6.22,2.09L7.95,3M13.95,2.89L12.53,5.1L13.95,7.3L13.94,7.31L11.95,10.4L10.22,9.5L11.64,7.3L10.22,5.1L12.22,2L13.95,2.89M20,2.89L18.56,5.1L20,7.3V7.31L18,10.4L16.25,9.5L17.67,7.3L16.25,5.1L18.25,2L20,2.89M2,22V14A2,2 0 0,1 4,12H20A2,2 0 0,1 22,14V22H20V20H4V22H2M6,14A1,1 0 0,0 5,15V17A1,1 0 0,0 6,18A1,1 0 0,0 7,17V15A1,1 0 0,0 6,14M10,14A1,1 0 0,0 9,15V17A1,1 0 0,0 10,18A1,1 0 0,0 11,17V15A1,1 0 0,0 10,14M14,14A1,1 0 0,0 13,15V17A1,1 0 0,0 14,18A1,1 0 0,0 15,17V15A1,1 0 0,0 14,14M18,14A1,1 0 0,0 17,15V17A1,1 0 0,0 18,18A1,1 0 0,0 19,17V15A1,1 0 0,0 18,14Z',
+  batteryLow: 'M16 20H8V6H16M16.67 4H15V2H9V4H7.33C6.6 4 6 4.6 6 5.33V20.67C6 21.4 6.6 22 7.33 22H16.67C17.41 22 18 21.41 18 20.67V5.33C18 4.6 17.4 4 16.67 4M15 16H9V19H15V16',
+  message: 'M20,2A2,2 0 0,1 22,4V16A2,2 0 0,1 20,18H6L2,22V4C2,2.89 2.9,2 4,2H20M4,4V17.17L5.17,16H20V4H4M6,7H18V9H6V7M6,11H15V13H6V11Z',
+  bellOutline: 'M10 21H14C14 22.1 13.1 23 12 23S10 22.1 10 21M21 19V20H3V19L5 17V11C5 7.9 7 5.2 10 4.3V4C10 2.9 10.9 2 12 2S14 2.9 14 4V4.3C17 5.2 19 7.9 19 11V17L21 19M17 11C17 8.2 14.8 6 12 6S7 8.2 7 11V18H17V11Z',
+  clock: 'M12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22C6.47,22 2,17.5 2,12A10,10 0 0,1 12,2M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z',
+  thermometer: 'M15 13V5A3 3 0 0 0 9 5V13A5 5 0 1 0 15 13M12 4A1 1 0 0 1 13 5V8H11V5A1 1 0 0 1 12 4Z',
+  tune: 'M8 13C6.14 13 4.59 14.28 4.14 16H2V18H4.14C4.59 19.72 6.14 21 8 21S11.41 19.72 11.86 18H22V16H11.86C11.41 14.28 9.86 13 8 13M8 19C6.9 19 6 18.1 6 17C6 15.9 6.9 15 8 15S10 15.9 10 17C10 18.1 9.1 19 8 19M19.86 6C19.41 4.28 17.86 3 16 3S12.59 4.28 12.14 6H2V8H12.14C12.59 9.72 14.14 11 16 11S19.41 9.72 19.86 8H22V6H19.86M16 9C14.9 9 14 8.1 14 7C14 5.9 14.9 5 16 5S18 5.9 18 7C18 8.1 17.1 9 16 9Z',
+  relay: 'M1,11H3.17C3.58,9.83 4.69,9 6,9C6.65,9 7.25,9.21 7.74,9.56L14.44,4.87L15.58,6.5L8.89,11.2C8.96,11.45 9,11.72 9,12A3,3 0 0,1 6,15C4.69,15 3.58,14.17 3.17,13H1V11M23,11V13H20.83C20.42,14.17 19.31,15 18,15A3,3 0 0,1 15,12A3,3 0 0,1 18,9C19.31,9 20.42,9.83 20.83,11H23M6,11A1,1 0 0,0 5,12A1,1 0 0,0 6,13A1,1 0 0,0 7,12A1,1 0 0,0 6,11M18,11A1,1 0 0,0 17,12A1,1 0 0,0 18,13A1,1 0 0,0 19,12A1,1 0 0,0 18,11Z',
 };
 
 // Texts as in library/heating/src/heating_texts.jinja (ui.valve_*, ui.hero_*).
@@ -62,7 +82,8 @@ export function normalizeConfig(config) {
     if (!GESTURES.includes(g)) throw new Error(`heating-card: ${k} must be one of ${GESTURES.join(', ')}`);
   }
   if (schedule === info && schedule !== 'none') throw new Error('heating-card: schedule_gesture and info_gesture must differ');
-  return { circuit: config.circuit, valves: [...valves], heading: config.heading || '', schedule_gesture: schedule, info_gesture: info };
+  // condensing_boiler: false hides the settings dialog's Kotel tab; anything but `false` keeps it
+  return { circuit: config.circuit, valves: [...valves], heading: config.heading || '', schedule_gesture: schedule, info_gesture: info, condensing_boiler: config.condensing_boiler !== false };
 }
 
 const st = (hass, id) => hass.states?.[id]?.state;
@@ -447,7 +468,8 @@ function box1Html(c) {
     </div>
     <button class="sb" data-act="sync" data-k="sync"${syncing ? ' disabled' : ''}>${syncing ? spinner : ''}Srovnat</button>
     <button class="sb" data-act="open" data-val="program" data-k="open:program">Program</button>
-  </div>`;
+  </div>
+  <div class="vd-foot"><button class="sb soft" data-act="open" data-val="settings" data-k="open:settings">${svg(ICON.cog, 15)}Nastavení</button></div>`;
 }
 
 // The card's HTML in the pieces that are patched separately: box 1, the box 2 summary, one string per tile.
@@ -621,8 +643,222 @@ export function programParts(v) {
 
 export const programHtml = (v) => { const p = programParts(v); return p.head + p.body; };
 
+// ---- Settings dialog (design V7-SettingsRule / Boiler / Windows / Other) ----
+
+const SET_TABS = [['rule', 'Pravidlo', ICON.thermometer], ['boiler', 'Kotel', ICON.fire], ['windows', 'Okna', WINDOW_CLOSED], ['other', 'Ostatní', ICON.tune]];
+const OUTDOOR_SOURCE = 'input_text.heating_outdoor_temperature_source'; // shared by all circuits
+
+// The tab that is shown: Kotel only with `condensing_boiler`, an unknown tab falls back to Pravidlo.
+export const settingsTab = (cfg, tab) => (SET_TABS.some(([id]) => id === tab) && (tab !== 'boiler' || cfg.condensing_boiler) ? tab : 'rule');
+
+// Every sensor.* with device_class temperature and every weather.* (the outdoor temperature picker).
+export const outdoorSources = (hass) => Object.keys(hass.states ?? {}).filter((id) => id.startsWith('weather.')
+  || (id.startsWith('sensor.') && hass.states[id].attributes?.device_class === 'temperature'));
+
+const decimals = (step) => (String(step).split('.')[1] ?? '').length;
+
+// A number field from an input_number: value / unit / min / max / step come from its state; null when it is missing or not a number.
+// `def` = {label, icon, help}; `pending` = {id: {v, at}}, a ± value sent but not yet reported (shown until hass reports it or PENDING_MS).
+export function numField(hass, id, def = {}, pending = {}, now = Date.now()) {
+  const s = hass.states?.[id];
+  const value = num(s?.state);
+  if (value == null) return null;
+  const a = s.attributes ?? {};
+  const step = num(a.step) ?? 1;
+  const p = pending[id];
+  const shown = p && now - p.at < PENDING_MS ? p.v : value;
+  const unit = a.unit_of_measurement ?? '';
+  return {
+    id, label: def.label, icon: def.icon, value: shown, text: fmt(shown, decimals(step)), unit, min: num(a.min) ?? 0, max: num(a.max) ?? 100, step,
+    help: def.help ?? `Krok ${fmt(step, decimals(step))}${unit ? ` ${unit}` : ''}`,
+  };
+}
+
+// field value ± one step, clamped to min / max and rounded to the step's decimals (0.3 + 0.1 = 0.4, no float noise).
+export const stepNum = (f, dir) => Number(Math.min(f.max, Math.max(f.min, f.value + f.step * dir)).toFixed(decimals(f.step)));
+
+const srcValue = (hass, id) => {
+  const s = hass.states?.[id];
+  return s ? num(id.startsWith('weather.') ? s.attributes?.temperature ?? s.state : s.state) : null;
+};
+const srcLabel = (hass, id) => {
+  const v = srcValue(hass, id);
+  return `${at(hass, id, 'friendly_name') || id}${v == null ? '' : ` · ${fmt(v, 1)} °C`}`;
+};
+const hhmm = (v) => { const t = String(v ?? '').slice(0, 5); return /^\d\d:\d\d$/.test(t) ? t : ''; };
+const minutesSince = (iso, now) => { const t = Date.parse(iso); return Number.isFinite(t) ? Math.max(0, Math.floor((now - t) / 60000)) : null; };
+const isOpen = (w) => w.open === true || w.state === 'on';
+
+const SETTING_FIELDS = {
+  threshold: ['input_number', 'heating_weather_threshold', { label: 'Topit pod venkovní teplotou', icon: ICON.thermoLow }],
+  fast: ['input_number', 'heating_fast_start_delta', { label: 'Rychlý start pod rozvrhem', icon: ICON.rocket, help: 'Hlavice otevře naplno, když je místnost o tolik pod cílem.' }],
+  bypass: ['input_number', 'heating_bypass_threshold', { label: 'Kotel topí pro hlavici otevřenou od', icon: ICON.valve, help: 'Menší otevření kotel nezapne (kromě rychlého startu).' }],
+  margin: ['input_number', 'heating_close_margin', { label: 'Zavřít doběh nad rozvrhem', icon: ICON.thermoUp, help: 'Doběh skončí, když místnost přeteče o tolik nad cíl.' }],
+  overrun: ['input_number', 'heating_bypass_overrun', { label: 'Doběh čerpadla', icon: ICON.pump, help: 'Poslední otevřená hlavice drží vodu v oběhu, než kotel dojede.' }],
+  release: ['input_number', 'heating_release_check', { label: 'Kontrola po uvolnění hlavice', icon: ICON.timerSand, help: 'Pak se ověří, že hlavice opravdu zavřela.' }],
+  reminder: ['input_number', 'heating_window_reminder', { label: 'Připomenout otevřené okno po', icon: ICON.bellRing, help: '0 = nepřipomínat. Notifikace jde do kanálu okruhu.' }],
+};
+const SHARED_FIELDS = {
+  battery: ['input_number.heating_low_battery_threshold', { label: 'Slabá baterie pod', icon: ICON.batteryLow, help: 'Hlavice a okenní čidla pod prahem blikají a přijde upozornění.' }],
+  status: ['input_number.heating_status_duration', { label: 'Stavová zpráva svítí', icon: ICON.message, help: 'Jak dlouho karta ukazuje „Program nastaven“ apod.' }],
+};
+const fieldsOf = (hass, cfg, keys, ctx) => keys.map((k) => {
+  const [d, n, def] = SETTING_FIELDS[k];
+  return numField(hass, eid(cfg, d, n), def, ctx.nums);
+}).filter(Boolean);
+
+const SETTINGS_TAB = {
+  rule(hass, cfg, ctx, now) {
+    const e = (d, n) => eid(cfg, d, n);
+    const rule = st(hass, e('input_select', 'heating_auto_rule')) === 'time' ? 'time' : 'weather';
+    const [threshold] = fieldsOf(hass, cfg, ['threshold'], ctx);
+    const times = [['heating_time_from', 'Topit od', ICON.clockStart], ['heating_time_to', 'Topit do', ICON.clockEnd]]
+      .filter(([n]) => hass.states?.[e('input_datetime', n)])
+      .map(([n, label, icon]) => ({ id: e('input_datetime', n), label, icon, value: hhmm(st(hass, e('input_datetime', n))) }));
+    const srcState = hass.states?.[OUTDOOR_SOURCE];
+    const current = srcState?.state;
+    const list = ctx.sources ?? [];
+    const ids = BAD.includes(current) || current === '' || list.includes(current) ? list : [...list, current];
+    const source = srcState ? {
+      id: OUTDOOR_SOURCE, label: 'Venkovní teplota z', icon: ICON.cloudOutline, value: current ?? '',
+      options: ids.map((id) => ({ id, label: srcLabel(hass, id) })),
+      help: `${BAD.includes(current) || current === '' ? 'nevybráno' : current} · společné pro všechny okruhy`,
+    } : null;
+    // what the rule decides right now (sensor.heating_weather_ok_<c>: on / off)
+    const ok = st(hass, e('sensor', 'heating_weather_ok'));
+    let alert = null;
+    if (ok === 'on' || ok === 'off') {
+      const out = num(st(hass, e('sensor', 'heating_outdoor_temperature')));
+      const x = threshold?.value;
+      const d = new Date(now);
+      const when = rule === 'time'
+        ? `Je ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}, mezi ${times[0]?.value || '–'} a ${times[1]?.value || '–'}`
+        : `Venku ${out == null ? '–' : fmt(out, 1)} °C, pod ${x == null ? '–' : fmt(x, Number.isInteger(x) ? 0 : 1)} °C`;
+      alert = ok === 'on' ? { level: 'success', text: `${when} – kotel smí v režimu Počasí topit.` } : { level: 'info', text: `${when} – v režimu Počasí kotel teď netopí.` };
+    }
+    return { rule, hasRule: !!hass.states?.[e('input_select', 'heating_auto_rule')], alert, fields: threshold ? [threshold] : [], source, times };
+  },
+
+  boiler(hass, cfg, ctx) {
+    const e = (d, n) => eid(cfg, d, n);
+    const phases = at(hass, e('sensor', 'heating_valves'), 'phases') ?? {};
+    const demand = at(hass, e('sensor', 'heating_valves'), 'demand') ?? [];
+    let fast = 0, run = 0, heat = 0;
+    for (const v of cfg.valves) {
+      const raw = phases[v]?.[0];
+      if (raw === 'fast') fast++;
+      else if (raw === 'run' || raw === 'overrun') run++;
+      else if (demand.includes(v)) heat++;
+    }
+    const parts = [fast && `${fast} rychlý start`, heat && `${heat} topí`, run && `${run} doběh`].filter(Boolean);
+    return { fields: fieldsOf(hass, cfg, ['fast', 'bypass', 'margin', 'overrun', 'release'], ctx), now: `Hlavice teď: ${parts.length ? parts.join(', ') : 'žádná netopí'}.` };
+  },
+
+  windows(hass, cfg, ctx) {
+    const rows = cfg.valves.map((v) => {
+      const ws = windowList(hass, cfg, v);
+      return {
+        climate: v, name: at(hass, v, 'friendly_name') || v.split('.')[1], count: ws.length,
+        windows: ws.map((w) => ({ text: winLabel(w.name || w.entity_id), open: isOpen(w) })),
+      };
+    });
+    return { fields: fieldsOf(hass, cfg, ['reminder'], ctx), rows };
+  },
+
+  other(hass, cfg, ctx, now) {
+    const e = (d, n) => eid(cfg, d, n);
+    const fields = Object.values(SHARED_FIELDS).map(([id, def]) => numField(hass, id, def, ctx.nums)).filter(Boolean);
+    const lowRows = at(hass, e('sensor', 'heating_low_batteries'), 'low_battery') ?? [];
+    const low = new Set(lowRows.map((r) => r.climate).filter((c) => cfg.valves.includes(c))).size;
+    const all = cfg.valves.flatMap((v) => windowList(hass, cfg, v));
+    const openWins = all.filter(isOpen).length;
+    const boiler = hass.states?.[e('switch', 'boiler')];
+    const bs = boiler?.state === 'on' ? 'zapnuto' : boiler?.state === 'off' ? 'vypnuto' : 'neznámý';
+    const mins = minutesSince(boiler?.last_changed, now);
+    const out = num(st(hass, e('sensor', 'heating_outdoor_temperature')));
+    return {
+      fields, channel: cfg.circuit,
+      tiles: [
+        { icon: ICON.radiator, label: 'Hlavice', value: String(cfg.valves.length), caption: low ? `${low} se slabou baterií` : 'žádná se slabou baterií' },
+        { icon: WINDOW_CLOSED, label: 'Okenní čidla', value: String(all.length), caption: openWins ? `${openWins} otevřené` : 'žádné otevřené' },
+        { icon: ICON.relay, label: 'Kotel', value: e('switch', 'boiler'), small: true, caption: `${bs}${mins == null ? '' : ` · ${mins} min`}` },
+        { icon: ICON.thermometer, label: 'Venku', value: out == null ? '—' : `${fmt(out, 1)} °C`, caption: 'čidlo okruhu' },
+      ],
+    };
+  },
+};
+
+// Everything the settings dialog shows for `tab`. Pure; `ctx` = {nums: pending ± values, sources: outdoorSources()}, `now` (ms) for the clock and minutes.
+export function settingsView(hass, cfg, tab = 'rule', ctx = {}, now = Date.now()) {
+  const cur = settingsTab(cfg, tab);
+  return {
+    title: circuitTitle(hass, cfg), tab: cur,
+    tabs: SET_TABS.filter(([id]) => id !== 'boiler' || cfg.condensing_boiler).map(([id, label, icon]) => ({ id, label, icon })),
+    ...SETTINGS_TAB[cur](hass, cfg, { nums: {}, sources: [], ...ctx }, now),
+  };
+}
+
+const stepBtn = (f, d) => `<button class="pm raised" data-act="num" data-id="${esc(f.id)}" data-d="${d}" data-k="n${d}:${esc(f.id)}" aria-label="${esc(f.label)}: ${d < 0 ? 'méně' : 'více'}">${stroke(d < 0 ? 'M6 12h12' : 'M6 12h12M12 6v12', 18, 2.2)}</button>`;
+const fieldHtml = (f) => `<div class="soft field"><span class="fi">${svg(f.icon, 18)}</span>
+    <div class="fl"><div class="lbl">${esc(f.label)}</div><div class="fval">${esc(f.text)}${f.unit ? ` <span class="unit">${esc(f.unit)}</span>` : ''}</div><div class="help">${esc(f.help)}</div></div>
+    ${stepBtn(f, -1)}${stepBtn(f, 1)}</div>`;
+const pickHtml = (f, control) => `<div class="soft field"><span class="fi">${svg(f.icon, 18)}</span>
+    <div class="fl"><div class="lbl">${esc(f.label)}</div>${control}${f.help ? `<div class="help">${esc(f.help)}</div>` : ''}</div>
+    <span class="go">${svg(ICON.chevron, 20)}</span></div>`;
+const sourceHtml = (s) => pickHtml(s, `<select class="pick fval t" data-act="pick" data-id="${esc(s.id)}" data-k="pick:${esc(s.id)}" aria-label="${esc(s.label)}">${
+  s.value ? '' : '<option value="" selected>— vyber čidlo —</option>'}${s.options.map((o) => `<option value="${esc(o.id)}"${o.id === s.value ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`);
+const timeHtml = (t) => pickHtml(t, `<input class="pick fval t" type="time" value="${esc(t.value)}" data-act="pick" data-id="${esc(t.id)}" data-k="pick:${esc(t.id)}" aria-label="${esc(t.label)}">`);
+const fieldList = (fs) => `<div class="fields">${fs.map(fieldHtml).join('')}</div>`;
+const boldMode = (s) => esc(s).replace('Počasí', '<b>Počasí</b>');
+
+const SETTINGS_BODY = {
+  rule: (v) => `${v.alert ? `<div class="alert ${v.alert.level} vd-alert" role="status">${LEVEL_ICON[v.alert.level]}<span>${boldMode(v.alert.text)}</span></div>` : ''}
+  ${v.hasRule ? `<div class="vd-h">Režim Počasí řídí</div>
+  <div class="seg two" role="group" aria-label="Pravidlo režimu Počasí">
+    ${[['weather', 'Venkovní teplota', ICON.thermometer], ['time', 'Čas', ICON.clock]].map(([val, label, icon]) =>
+      `<button data-act="rule" data-val="${val}" data-k="rule:${val}" aria-pressed="${v.rule === val}"${v.rule === val ? ' class="on"' : ''}>${svg(icon, 16)}${label}</button>`).join('')}
+  </div>` : ''}
+  ${v.rule === 'weather' ? `<div class="fields">${v.fields.map(fieldHtml).join('')}${v.source ? sourceHtml(v.source) : ''}</div>`
+    : `<div class="pair">${v.times.map(timeHtml).join('')}</div>`}
+  <div class="help">Pravidlo platí jen v režimu <b>Počasí</b>. V režimu Zapnuto kotel topí podle hlavic vždy, ve Vypnuto nikdy. Změny platí hned.</div>`,
+
+  boiler: (v) => `<div class="vd-h">Fáze hlavice u kondenzačního kotle</div>
+  <figure class="phase" aria-label="Fáze hlavice: rychlý start, topí, doběh, kontrola">
+    <div class="ph"><div class="p-fast">Rychlý start</div><div class="p-heat">Topí</div><div class="p-run">Doběh</div><div class="p-chk">Kontrola</div></div>
+    <div class="cap"><span>pod rozvrhem</span><span>rozvrh dosažen</span><span>hlavice zavřená</span></div>
+  </figure>
+  ${fieldList(v.fields)}
+  <div class="help">${esc(v.now)} Změny platí hned.</div>`,
+
+  windows: (v) => `${v.fields.map(fieldHtml).join('')}
+  <div class="vd-h">Okenní čidla hlavic</div>
+  <div class="vd-wins">${v.rows.map((r) => `<div class="vd-win">
+    <span class="dot sm idle">${svg(ICON.radiator, 18)}</span>
+    <div class="txt"><div class="wn">${esc(r.name)}</div><div class="ws">${r.windows.length
+      ? r.windows.map((w) => (w.open ? `<span class="open">${esc(w.text)} · otevřené</span>` : esc(w.text))).join(' · ') : 'bez okenního čidla'}</div></div>
+    <span class="cnt">${r.count}</span></div>`).join('')}</div>
+  <div class="alert info vd-alert" role="status">${LEVEL_ICON.info}<span>Okna k hlavicím přiřadíš v aplikaci Homecraft (Topení → Hlavice → Okna). Otevřené okno zavře svou hlavici, po zavření se vrátí rozvrh.</span></div>`,
+
+  other: (v) => `<div class="vd-h">Pro všechny okruhy</div>
+  ${fieldList(v.fields)}
+  <div class="vd-h">Upozornění</div>
+  <div class="soft field"><span class="fi">${svg(ICON.bellOutline, 18)}</span>
+    <div class="fl"><div class="lbl">Kanál notifikací</div><div class="fval t">${esc(v.channel)}</div><div class="help">Nastavíš ve funkci Notifikace v aplikaci Homecraft.</div></div></div>
+  <div class="vd-h">Okruh</div>
+  <div class="vd-facts">${v.tiles.map((t) => `<div class="vd-tile"><div class="lbl"><span class="li">${svg(t.icon, 14)}</span>${esc(t.label)}</div><div class="fv${t.small ? ' s' : ''}">${esc(t.value)}</div><div class="cap">${esc(t.caption)}</div></div>`).join('')}</div>`,
+};
+
+// The settings dialog in the frame's slots: {head, body}.
+export function settingsParts(v) {
+  const tabs = `<div class="seg tabs ${v.tabs.length === 4 ? 'four' : ''}" role="tablist" aria-label="Oblast nastavení">${v.tabs.map((t) =>
+    `<button role="tab" aria-selected="${t.id === v.tab}" data-act="tab" data-val="${t.id}" data-k="tab:${t.id}"${t.id === v.tab ? ' class="on"' : ''}>${svg(t.icon, 16)}${t.label}</button>`).join('')}</div>`;
+  return { head: dialogHead('idle soft', ICON.cog, 'Nastavení', v.title), body: `${tabs}\n  ${SETTINGS_BODY[v.tab](v)}` };
+}
+
+export const settingsHtml = (v) => { const p = settingsParts(v); return p.head + p.body; };
+
 // Generic dialogs by kind: the entity ids a dialog reads (a hass update re-renders it only when one changed)
-// and its {head, body}. #446 / #447 add `settings` / `stats` here.
+// and its {head, body}. #447 adds `stats` here.
 const DIALOGS = {
   program: {
     label: 'Program',
@@ -634,6 +870,26 @@ const DIALOGS = {
       ...ctx.calendars,
     ],
     parts: (hass, cfg, ctx) => programParts(programView(hass, cfg, Date.now(), ctx.calendars, ctx.pending?.id ?? null)),
+  },
+  settings: {
+    label: 'Nastavení',
+    // ctx.tab = the open tab, ctx.nums = pending ± values, ctx.sources = the outdoor temperature candidates
+    ids: (hass, cfg, ctx) => {
+      const tab = settingsTab(cfg, ctx.tab);
+      const e = (d, n) => eid(cfg, d, n);
+      const per = {
+        rule: [e('input_select', 'heating_auto_rule'), e('input_number', 'heating_weather_threshold'), e('input_datetime', 'heating_time_from'),
+          e('input_datetime', 'heating_time_to'), e('sensor', 'heating_weather_ok'), e('sensor', 'heating_outdoor_temperature'), OUTDOOR_SOURCE,
+          ...ctx.sources, st(hass, OUTDOOR_SOURCE)],
+        boiler: [...['heating_fast_start_delta', 'heating_bypass_threshold', 'heating_close_margin', 'heating_bypass_overrun', 'heating_release_check']
+          .map((n) => e('input_number', n)), e('sensor', 'heating_valves')],
+        windows: [e('input_number', 'heating_window_reminder'), e('sensor', 'heating_off_schedule'), ...cfg.valves],
+        other: ['input_number.heating_low_battery_threshold', 'input_number.heating_status_duration', e('sensor', 'heating_low_batteries'),
+          e('sensor', 'heating_off_schedule'), e('switch', 'boiler'), e('sensor', 'heating_outdoor_temperature')],
+      };
+      return [...per[tab], e('binary_sensor', 'heating_state')].filter(Boolean);
+    },
+    parts: (hass, cfg, ctx) => settingsParts(settingsView(hass, cfg, ctx.tab, ctx)),
   },
 };
 
@@ -749,6 +1005,24 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .seg.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sel { max-width: 100%; margin-top: 2px; border: 0; border-radius: 10px; padding: 6px 8px; background: var(--c-card); color: var(--c-text); font: inherit; font-size: 14px; font-weight: 600; }
 .vd-tile .cap { font-size: 12px; color: var(--c-text2); margin-top: 2px; }
+/* settings dialog (V7-Settings*): every setting is a soft panel with an icon circle, label, value and − / + (or a native picker) */
+.seg.four { grid-template-columns: repeat(4, minmax(0, 1fr)); } .seg.tabs button { padding: 0 4px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.fields { display: flex; flex-direction: column; gap: 8px; } .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.field { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 8px 8px 8px; }
+.field.soft { background: var(--c-tile-bg); border: var(--c-tile-border); box-shadow: var(--c-tile-shadow); border-radius: var(--c-tile-radius); }
+.field .fl { flex: 1; min-width: 0; } .field .help { margin-top: 2px; }
+.fi { width: 32px; height: 32px; border-radius: 50%; background: var(--hfb-dot-idle, var(--c-card)); color: #607D8B; display: flex; align-items: center; justify-content: center; flex: none; align-self: flex-start; margin-top: 2px; }
+.fval { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; } .fval.t { font-size: 14px; font-weight: 600; }
+.pick { display: block; width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; color: var(--c-text); font: inherit; font-size: 14px; font-weight: 600; text-overflow: ellipsis; appearance: none; -webkit-appearance: none; }
+.go { width: 28px; height: 36px; display: flex; align-items: center; justify-content: center; color: var(--c-text2); flex: none; }
+.phase { margin: 0; display: flex; flex-direction: column; gap: 6px; } .phase .ph { display: flex; gap: 3px; }
+.phase .ph div { height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; color: var(--hfb-dot-on-icon, #fff); }
+.p-fast { flex: 2; background: var(--hfb-hot-dot, linear-gradient(145deg, #FF7A38, #CF3416)); } .p-heat { flex: 4; background: var(--hfb-heat-dot, linear-gradient(145deg, #FFA66E, #E8592C)); }
+.p-run { flex: 2; background: var(--hfb-run-dot, linear-gradient(145deg, color-mix(in srgb, var(--primary-color, #4f6b8c) 65%, #fff), var(--primary-color, #4f6b8c))); }
+.phase .ph .p-chk { flex: 2; background: var(--c-fill); color: #607D8B; }
+.phase .cap { display: flex; justify-content: space-between; font-size: 11px; color: var(--c-text2); margin: 0; }
+.ws .open { color: var(--info-color, #0a84ff); font-weight: 600; } .cnt { font-size: 12px; font-weight: 600; color: var(--c-text2); }
+.vd-tile .li { display: inline-flex; vertical-align: -3px; margin-right: 4px; color: #607D8B; } .fv.s { font-size: 14px; }
 @media (max-width: 599px) {
   dialog.vd { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 24px 24px 0 0; max-height: 92vh; }
 }
@@ -771,7 +1045,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     this._vdlg = this.shadowRoot.querySelector('dialog.vd:not(.gd)');
     this._gdlg = this.shadowRoot.querySelector('dialog.gd');
     this._gd = null; // the generic dialog's kind (a DIALOGS key) while it is open
-    this._gdCtx = { calendars: [], pending: null };
+    this._gdCtx = { calendars: [], pending: null, nums: {}, sources: [], tab: 'rule' };
     this._vd = null; // the valve whose dialog is open
     this._chart = null; // chartModel() result, 'none' or null (loading)
     this._seq = 0; // drops stale history responses
@@ -787,12 +1061,18 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     });
     root.addEventListener('keydown', (e) => this._key(e));
     // an open select must not be rebuilt: renders wait until it changes or loses focus
-    root.addEventListener('focusin', (e) => { if (e.target.closest?.('[data-act="calendar"]')) this._selOpen = true; });
-    root.addEventListener('focusout', (e) => { if (e.target.closest?.('[data-act="calendar"]')) { this._selOpen = false; this._flushGeneric(); } });
-    root.addEventListener('change', (e) => { // the holiday calendar select
-      const sel = e.target.closest?.('[data-act="calendar"]');
-      if (sel) { this._selOpen = false; setTimeout(() => this._flushGeneric(), 0); }
-      if (sel && this._cfg) this._call('input_text', 'set_value', { entity_id: eid(this._cfg, ...HOLIDAY_ID), value: sel.value });
+    // (every select / time input of the generic dialogs: the holiday calendar, the settings pickers)
+    const PICKER = '[data-act="calendar"], [data-act="pick"]';
+    root.addEventListener('focusin', (e) => { if (e.target.closest?.(PICKER)) this._selOpen = true; });
+    root.addEventListener('focusout', (e) => { if (e.target.closest?.(PICKER)) { this._selOpen = false; this._flushGeneric(); } });
+    root.addEventListener('change', (e) => { // the holiday calendar select, the settings pickers
+      const sel = e.target.closest?.(PICKER);
+      if (!sel) return;
+      this._selOpen = false;
+      setTimeout(() => this._flushGeneric(), 0);
+      if (!this._cfg) return;
+      if (sel.dataset.act === 'calendar') this._call('input_text', 'set_value', { entity_id: eid(this._cfg, ...HOLIDAY_ID), value: sel.value });
+      else this._pick(sel.dataset.id, sel.value);
     });
     this._dlg.addEventListener('close', () => { this._dlg.replaceChildren(); this._sched = null; });
     // a click outside the sheet's box closes it (padding and gaps are inside the box)
@@ -940,7 +1220,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     this._vdlg.querySelector('.vd-target').classList.toggle('off', d.view.phase === 'window');
   }
 
-  // The generic dialog (program now; settings and stats later): head + body patched only when a watched state changed.
+  // The generic dialog (program, settings; stats later): head + body patched only when a watched state changed.
   _refreshGeneric(force = false, first = false) {
     const def = DIALOGS[this._gd];
     if (!def || !this._gdlg.open || !this._cfg || !this._hass) return;
@@ -949,6 +1229,9 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     const hass = this._hass;
     const pp = this._gdCtx.pending; // a tapped program is dropped once hass reports it or after PENDING_MS
     if (pp && (Date.now() - pp.at >= PENDING_MS || programId(hass, this._cfg) === pp.id)) this._gdCtx.pending = null;
+    for (const [id, p] of Object.entries(this._gdCtx.nums)) { // so is a ± setting value
+      if (Date.now() - p.at >= PENDING_MS || num(st(hass, id)) === p.v) delete this._gdCtx.nums[id];
+    }
     this._gdDirty = false;
     const next = def.ids(hass, this._cfg, this._gdCtx).map((id) => hass.states?.[id]);
     if (!force && this._gdSeen && this._gdSeen.length === next.length && next.every((x, i) => x === this._gdSeen[i])) return;
@@ -964,8 +1247,11 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     this._gdSeen = null;
     this._gdDirty = false;
     this._selOpen = false;
-    // the calendar.* ids are resolved once; the dialog re-reads only their states
-    this._gdCtx = { calendars: Object.keys(this._hass.states ?? {}).filter((id) => id.startsWith('calendar.')), pending: null };
+    // the calendar.* ids and the outdoor temperature sources are resolved once; the dialog re-reads only their states
+    this._gdCtx = {
+      calendars: Object.keys(this._hass.states ?? {}).filter((id) => id.startsWith('calendar.')), pending: null,
+      nums: {}, sources: outdoorSources(this._hass), tab: 'rule',
+    };
     this._gdlg.setAttribute('aria-label', DIALOGS[kind].label);
     clearInterval(this._gt);
     this._gt = setInterval(() => this._refreshGeneric(true), 60000); // "dnes" / "včera" roll over at midnight
@@ -1013,6 +1299,12 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     return Promise.resolve(this._hass.callService(domain, service, data)).catch((e) => console.warn(`heating-card: ${domain}.${service} failed`, e));
   }
 
+  // A settings picker: the outdoor temperature source (input_text) or a rule time (input_datetime, HH:MM).
+  _pick(id, value) {
+    if (id.startsWith('input_text.') && value) this._call('input_text', 'set_value', { entity_id: id, value });
+    else if (id.startsWith('input_datetime.') && /^\d\d:\d\d$/.test(value)) this._call('input_datetime', 'set_datetime', { entity_id: id, time: `${value}:00` });
+  }
+
   _onClick(e) {
     const b = e.target.closest('[data-act]');
     if (!b || b.disabled) return;
@@ -1036,6 +1328,21 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     } else if (act === 'alternation') this._call('input_boolean', 'toggle', { entity_id: eid(c, 'input_boolean', 'heating_week_alternation') });
     else if (act === 'holidays') {
       if (st(this._hass, eid(c, 'input_select', 'heating_holidays')) !== b.dataset.val) this._call('input_select', 'select_option', { entity_id: eid(c, 'input_select', 'heating_holidays'), option: b.dataset.val });
+    } else if (act === 'tab') { this._gdCtx.tab = b.dataset.val; this._refreshGeneric(true); }
+    else if (act === 'rule') {
+      if (st(this._hass, eid(c, 'input_select', 'heating_auto_rule')) !== b.dataset.val) this._call('input_select', 'select_option', { entity_id: eid(c, 'input_select', 'heating_auto_rule'), option: b.dataset.val });
+    } else if (act === 'num') {
+      if (!b.dataset.id.startsWith('input_number.')) return;
+      // quick taps add up: the next step starts from the last value sent, until hass reports it
+      const f = numField(this._hass, b.dataset.id, {}, this._gdCtx.nums);
+      if (!f) return;
+      const v = stepNum(f, Number(b.dataset.d));
+      if (v === f.value) return;
+      this._gdCtx.nums[f.id] = { v, at: Date.now() };
+      this._call('input_number', 'set_value', { entity_id: f.id, value: v });
+      clearTimeout(this._gpt);
+      this._gpt = setTimeout(() => this._refreshGeneric(true), PENDING_MS + 50);
+      this._refreshGeneric(true);
     } else if (act === 'programs') { this._gdlg.close(); this._openSchedule(c.valves[0]); }
     else if (act === 'history') { const id = this._vd; this._vdlg.close(); this._moreInfo(id); } // HA's dialog would sit under ours
     else if (act === 'schedule') { const id = this._vd; this._vdlg.close(); this._openSchedule(id); }
