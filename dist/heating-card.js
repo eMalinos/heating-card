@@ -110,6 +110,12 @@ export function valveView(hass, cfg, climate) {
 // The circuit's title: the configured heading, the area title the feature publishes, else the circuit id.
 const circuitTitle = (hass, cfg) => cfg.heading || at(hass, eid(cfg, 'binary_sensor', 'heating_state'), 'title') || cfg.circuit;
 
+// sensor.heating_applying_<c>: Node-RED is setting the valves (trigger program / sync), `left` valves to go.
+const applyingState = (hass, cfg) => {
+  const ap = eid(cfg, 'sensor', 'heating_applying');
+  return { on: st(hass, ap) === 'applying', trigger: at(hass, ap, 'trigger'), left: num(at(hass, ap, 'left')) ?? 0 };
+};
+
 // Box 1: header subtitle, mode + hint, status, program, off-schedule count, applying, outdoor value.
 export function circuitView(hass, cfg) {
   const e = (d, n) => eid(cfg, d, n);
@@ -146,12 +152,11 @@ export function circuitView(hass, cfg) {
   const status = text && !['unknown', 'unavailable'].includes(text) ? { level: m ? m[1] : 'info', text } : null;
 
   const programName = programLabel(hass, cfg, programId(hass, cfg));
-  const ap = e('sensor', 'heating_applying');
   return {
     title: circuitTitle(hass, cfg),
     boilerOn, subtitle, demand, mode, hint, status, programName,
     offSchedule: num(st(hass, e('sensor', 'heating_off_schedule'))) ?? 0,
-    applying: { on: st(hass, ap) === 'applying', trigger: at(hass, ap, 'trigger'), left: num(at(hass, ap, 'left')) ?? 0 },
+    applying: applyingState(hass, cfg),
     outdoor: num(st(hass, e('sensor', 'heating_outdoor_temperature'))),
   };
 }
@@ -377,8 +382,8 @@ export function detailParts(d, chart = 'loading') {
   ];
   const dotCls = PHASE_DOT[v.phase];
   return {
-    head: `<span class="dot ${dotCls}${dotCls === 'idle' || dotCls === 'dis' ? ' soft' : ''}">${svg(PHASE_ICON[v.phase], 20)}${badged ? `<span class="badge blink">${svg(ICON.battery, 12)}</span>` : ''}</span>
-    <div class="txt"><div class="sub">${esc(d.title)}</div><h2 class="vd-title">${esc(v.name)}</h2></div>`,
+    head: headMain(`${dotCls}${dotCls === 'idle' || dotCls === 'dis' ? ' soft' : ''}`, PHASE_ICON[v.phase], v.name, d.title,
+      badged ? `<span class="badge blink">${svg(ICON.battery, 12)}</span>` : ''),
     alert,
     now: `<div><div class="sub">Teplota teď · ${esc(v.word.toLowerCase())}</div><div><b class="hero">${v.now == null ? '–' : fmt(v.now, 1)}</b> <span class="unit big">°C</span></div></div>
     ${d.position == null ? '' : `<span class="chip">ventil ${fmt(d.position)} %</span>`}`,
@@ -476,9 +481,12 @@ export const watchedIds = (cfg) => [...CIRCUIT_ENTITIES.map(([d, n]) => eid(cfg,
 
 // ---- Generic dialog frame (#445; reused by the settings and statistics dialogs) ----
 
-// Head of a generic dialog: icon circle, context line (the circuit title), title, close button.
-export const dialogHead = (dotClass, iconPath, title, context) => `<span class="dot ${esc(dotClass)}">${svg(iconPath, 20)}</span>
-  <div class="txt"><div class="sub">${esc(context)}</div><h2 class="vd-title">${esc(title)}</h2></div>
+// Head of every dialog: icon circle (+ optional badge html), context line (the circuit title), title.
+export const headMain = (dotClass, iconPath, title, context, badge = '') => `<span class="dot ${esc(dotClass)}">${svg(iconPath, 20)}${badge}</span>
+  <div class="txt"><div class="sub">${esc(context)}</div><h2 class="vd-title">${esc(title)}</h2></div>`;
+
+// Head of a generic dialog: headMain + close button.
+export const dialogHead = (dotClass, iconPath, title, context) => `${headMain(dotClass, iconPath, title, context)}
   <button class="x big" data-act="gclose" data-k="gclose" aria-label="Zavřít">${stroke('M6 6l12 12M18 6 6 18', 20)}</button>`;
 
 // The fixed frame: a head slot and a body slot (patched separately, see HeatingCard._refreshGeneric).
@@ -526,10 +534,13 @@ const holidayText = (h) => {
 };
 
 // Everything the program dialog shows. Pure; `now` (ms) only for `Program změněn`.
-export function programView(hass, cfg, now = Date.now()) {
+// `calendarIds` = the calendar.* entities (the card resolves them once per open dialog); `pending` = a tapped program id.
+export function programView(hass, cfg, now = Date.now(), calendarIds = Object.keys(hass.states ?? {}).filter((id) => id.startsWith('calendar.')), pending = null) {
   const e = (d, n) => eid(cfg, d, n);
-  const current = programId(hass, cfg);
-  const ids = at(hass, e('select', 'heating_program'), 'options') ?? ['auto'];
+  const selectable = !!hass.states?.[e('select', 'heating_program')];
+  const current = pending ?? programId(hass, cfg);
+  // no select: nothing can be switched, the list shows the current program read-only
+  const ids = selectable ? at(hass, e('select', 'heating_program'), 'options') ?? ['auto'] : [current ?? 'auto'];
   const altState = st(hass, e('input_boolean', 'heating_week_alternation'));
   const alternation = altState === 'on' ? true : altState === 'off' ? false : null; // null: no helper, row hidden
   const sch = e('sensor', 'heating_schedule');
@@ -541,24 +552,24 @@ export function programView(hass, cfg, now = Date.now()) {
     detail: id === 'auto' ? `rozvrh hlavic${alternation && weekWord ? ` · ${weekWord} týden` : ''}` : '',
   }));
 
-  const ap = e('sensor', 'heating_applying');
-  const trigger = at(hass, ap, 'trigger');
+  const ap = applyingState(hass, cfg);
   const total = cfg.valves.length;
-  const applying = st(hass, ap) === 'applying' && (trigger === 'program' || trigger === 'sync')
-    ? { trigger, name: programLabel(hass, cfg, current), progress: `${Math.min(total, Math.max(0, total - (num(at(hass, ap, 'left')) ?? 0)))} ze ${total}` }
+  const applying = ap.on && (ap.trigger === 'program' || ap.trigger === 'sync')
+    ? { trigger: ap.trigger, name: programLabel(hass, cfg, current), progress: `${Math.min(total, Math.max(0, total - ap.left))} ze ${total}` }
     : null;
 
+  // holidays: null = no helper (hidden), '' = unavailable / unknown (no segment pressed), else none / calendar
   const holState = st(hass, e('input_select', 'heating_holidays'));
-  const holidays = hass.states?.[e('input_select', 'heating_holidays')] ? (holState === 'calendar' ? 'calendar' : 'none') : null;
+  const holidays = hass.states?.[e('input_select', 'heating_holidays')] ? (holState === 'calendar' || holState === 'none' ? holState : '') : null;
+  const hasCalendar = !!hass.states?.[e(...HOLIDAY_ID)]; // no helper: no calendar row
   const calendar = st(hass, e(...HOLIDAY_ID)) ?? '';
-  const calendars = Object.keys(hass.states ?? {}).filter((id) => id.startsWith('calendar.'))
-    .map((id) => ({ id, name: at(hass, id, 'friendly_name') || id }));
+  const calendars = calendarIds.map((id) => ({ id, name: at(hass, id, 'friendly_name') || id }));
   if (calendar && !BAD.includes(calendar) && !calendars.some((c) => c.id === calendar)) calendars.push({ id: calendar, name: calendar });
   const off = num(st(hass, e('sensor', 'heating_off_schedule'))) ?? 0;
   const scheduled = Math.max(0, total - off);
   const changed = hass.states?.[e('sensor', 'heating_program')]?.last_changed;
   return {
-    title: circuitTitle(hass, cfg), programs, current, applying, syncing: applying?.trigger === 'sync',
+    title: circuitTitle(hass, cfg), programs, current, selectable, hasCalendar, applying, syncing: applying?.trigger === 'sync',
     alternation, weekLabel: weekWord ? `Teď ${weekWord}${weekNumber == null ? '' : ` (${weekNumber}.)`}` : '',
     holidays, calendar: BAD.includes(calendar) ? '' : calendar, calendars,
     nextHoliday: holidayText((at(hass, sch, 'holidays_next') ?? [])[0]),
@@ -573,7 +584,7 @@ export function programView(hass, cfg, now = Date.now()) {
 export function programParts(v) {
   const alert = v.applying ? `<div class="alert info vd-alert" role="status"><span class="spin" style="display:flex;flex:none">${svg(ICON.sync, 18)}</span><span>${
     v.applying.trigger === 'sync' ? 'Srovnávám hlavice' : `Nastavuji hlavice podle programu <b>${esc(v.applying.name)}</b>`} · ${esc(v.applying.progress)}</span></div>` : '';
-  const rows = v.programs.map((p) => `<button role="radio" aria-checked="${p.current}" data-act="program" data-val="${esc(p.id)}" data-k="p:${esc(p.id)}"${p.current ? ' class="on"' : ''}>
+  const rows = v.programs.map((p) => `<button role="radio" aria-checked="${p.current}"${v.selectable ? '' : ' disabled'} data-act="program" data-val="${esc(p.id)}" data-k="p:${esc(p.id)}"${p.current ? ' class="on"' : ''}>
       <span class="dot sm ${p.current ? 'heat' : 'idle'}">${svg(p.icon, 18)}</span>
       <span class="txt"><span class="n">${esc(p.name)}</span>${p.detail ? `<span class="d">${esc(p.detail)}</span>` : ''}</span>
       <span class="ck">${svg(ICON.check, 16)}</span></button>`).join('');
@@ -584,7 +595,7 @@ export function programParts(v) {
   const holidays = v.holidays == null ? '' : `<div class="seg two" role="group" aria-label="Svátky">
     ${[['none', 'Svátky jako všední den'], ['calendar', 'Svátky jako neděle']].map(([val, label]) =>
       `<button data-act="holidays" data-val="${val}" data-k="hol:${val}" aria-pressed="${v.holidays === val}"${v.holidays === val ? ' class="on"' : ''}>${label}</button>`).join('')}
-  </div>${v.holidays === 'calendar' ? `<div class="fld soft">
+  </div>${v.holidays === 'calendar' && v.hasCalendar ? `<div class="fld soft">
     <div class="fl"><div class="lbl">Kalendář svátků</div>
       <select class="sel" data-act="calendar" data-k="calendar" aria-label="Kalendář svátků"><option value=""${v.calendar ? '' : ' selected'}>— vyber kalendář —</option>${
         v.calendars.map((c) => `<option value="${esc(c.id)}"${c.id === v.calendar ? ' selected' : ''}>${esc(c.name)} · ${esc(c.id)}</option>`).join('')}</select>
@@ -594,7 +605,7 @@ export function programParts(v) {
     head: dialogHead('run', ICON.calendarWeek, 'Program', v.title),
     body: `${alert}
   <div class="prog" role="radiogroup" aria-label="Program">${rows}</div>
-  <div class="help prog-help">Program vybere rozvrh všech hlavic okruhu. Ruční změnu na hlavici přepíše další krok rozvrhu.</div>
+  <div class="help prog-help">${v.selectable ? 'Program vybere rozvrh všech hlavic okruhu. Ruční změnu na hlavici přepíše další krok rozvrhu.' : 'Program nejde přepnout: chybí výběr programu okruhu.'}</div>
   <div class="vd-h">Týdny a svátky</div>
   ${alternation}${holidays}
   <div class="vd-facts">
@@ -614,13 +625,15 @@ export const programHtml = (v) => { const p = programParts(v); return p.head + p
 // and its {head, body}. #446 / #447 add `settings` / `stats` here.
 const DIALOGS = {
   program: {
-    ids: (hass, cfg) => [
+    label: 'Program',
+    // ctx = what _openDialog resolved once: {calendars: [calendar.* ids], pending: {id, at} | null}
+    ids: (hass, cfg, ctx) => [
       ...[['select', 'heating_program'], ['sensor', 'heating_program'], ['sensor', 'heating_applying'], ['sensor', 'heating_schedule'],
         ['input_boolean', 'heating_week_alternation'], ['input_select', 'heating_holidays'], HOLIDAY_ID, ['sensor', 'heating_off_schedule'],
         ['binary_sensor', 'heating_state']].map(([d, n]) => eid(cfg, d, n)),
-      ...Object.keys(hass.states ?? {}).filter((id) => id.startsWith('calendar.')),
+      ...ctx.calendars,
     ],
-    parts: (hass, cfg) => programParts(programView(hass, cfg)),
+    parts: (hass, cfg, ctx) => programParts(programView(hass, cfg, Date.now(), ctx.calendars, ctx.pending?.id ?? null)),
   },
 };
 
@@ -758,6 +771,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     this._vdlg = this.shadowRoot.querySelector('dialog.vd:not(.gd)');
     this._gdlg = this.shadowRoot.querySelector('dialog.gd');
     this._gd = null; // the generic dialog's kind (a DIALOGS key) while it is open
+    this._gdCtx = { calendars: [], pending: null };
     this._vd = null; // the valve whose dialog is open
     this._chart = null; // chartModel() result, 'none' or null (loading)
     this._seq = 0; // drops stale history responses
@@ -772,8 +786,12 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
       if (g && !g.main.contains(e.relatedTarget)) this._cancel();
     });
     root.addEventListener('keydown', (e) => this._key(e));
+    // an open select must not be rebuilt: renders wait until it changes or loses focus
+    root.addEventListener('focusin', (e) => { if (e.target.closest?.('[data-act="calendar"]')) this._selOpen = true; });
+    root.addEventListener('focusout', (e) => { if (e.target.closest?.('[data-act="calendar"]')) { this._selOpen = false; this._flushGeneric(); } });
     root.addEventListener('change', (e) => { // the holiday calendar select
       const sel = e.target.closest?.('[data-act="calendar"]');
+      if (sel) { this._selOpen = false; setTimeout(() => this._flushGeneric(), 0); }
       if (sel && this._cfg) this._call('input_text', 'set_value', { entity_id: eid(this._cfg, ...HOLIDAY_ID), value: sel.value });
     });
     this._dlg.addEventListener('close', () => { this._dlg.replaceChildren(); this._sched = null; });
@@ -796,8 +814,12 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     });
     this._gdlg.addEventListener('close', () => {
       if (this._gdlg.open) return;
+      clearInterval(this._gt);
+      clearTimeout(this._gpt);
       this._gd = null;
       this._gdSeen = null;
+      this._gdDirty = false;
+      this._selOpen = false;
       this._gdlg.replaceChildren();
     });
   }
@@ -805,6 +827,8 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
   // Timers and dialogs end with the element (a dashboard edit or navigation removes it); nothing is restored on reconnect.
   disconnectedCallback() {
     clearInterval(this._vt);
+    clearInterval(this._gt);
+    clearTimeout(this._gpt);
     clearTimeout(this._pt);
     this._cancel();
     clearTimeout(this._tap?.timer);
@@ -855,7 +879,16 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
 
   _release() {
     this._pressed = false;
-    if (this._dirty) setTimeout(() => { if (!this._pressed && this._dirty) { this._dirty = false; this._render(); } }, 0); // after the click
+    if (this._dirty || this._gdDirty) setTimeout(() => { // after the click
+      if (this._pressed) return;
+      if (this._dirty) { this._dirty = false; this._render(); }
+      this._flushGeneric();
+    }, 0);
+  }
+
+  // A generic-dialog render that waited for a pointer or the open select.
+  _flushGeneric() {
+    if (this._gdDirty && !this._pressed && !this._selOpen) { this._gdDirty = false; this._refreshGeneric(true); }
   }
 
   // Patches only the parts whose markup changed (the flame / blink of the other tiles keeps running)
@@ -885,7 +918,6 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     this._set(this._wrap.querySelector('[data-p="sum"]'), esc(parts.summary), 'sum');
     this._wrap.querySelectorAll('.tw').forEach((el, i) => this._set(el, parts.tiles[i], `t${i}`));
     this._refreshDialog(true);
-    this._refreshGeneric(true);
   }
 
   _refreshDialog(force = false, first = false) {
@@ -912,13 +944,17 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
   _refreshGeneric(force = false, first = false) {
     const def = DIALOGS[this._gd];
     if (!def || !this._gdlg.open || !this._cfg || !this._hass) return;
-    if (this._pressed && !first) { this._dirty = true; return; } // a rebuilt button would swallow the press
+    // a rebuilt button would swallow the press, a rebuilt select closes its open picker
+    if ((this._pressed || this._selOpen) && !first) { this._gdDirty = true; return; }
     const hass = this._hass;
-    const next = def.ids(hass, this._cfg).map((id) => hass.states?.[id]);
+    const pp = this._gdCtx.pending; // a tapped program is dropped once hass reports it or after PENDING_MS
+    if (pp && (Date.now() - pp.at >= PENDING_MS || programId(hass, this._cfg) === pp.id)) this._gdCtx.pending = null;
+    this._gdDirty = false;
+    const next = def.ids(hass, this._cfg, this._gdCtx).map((id) => hass.states?.[id]);
     if (!force && this._gdSeen && this._gdSeen.length === next.length && next.every((x, i) => x === this._gdSeen[i])) return;
     this._gdSeen = next;
     if (!this._gdlg.firstElementChild) this._gdlg.innerHTML = gdShell;
-    const parts = def.parts(hass, this._cfg);
+    const parts = def.parts(hass, this._cfg, this._gdCtx);
     for (const [k, html] of Object.entries(parts)) this._set(this._gdlg.querySelector(`[data-p="${k}"]`), html, `gd:${k}`);
   }
 
@@ -926,6 +962,13 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     if (!DIALOGS[kind]) return;
     this._gd = kind;
     this._gdSeen = null;
+    this._gdDirty = false;
+    this._selOpen = false;
+    // the calendar.* ids are resolved once; the dialog re-reads only their states
+    this._gdCtx = { calendars: Object.keys(this._hass.states ?? {}).filter((id) => id.startsWith('calendar.')), pending: null };
+    this._gdlg.setAttribute('aria-label', DIALOGS[kind].label);
+    clearInterval(this._gt);
+    this._gt = setInterval(() => this._refreshGeneric(true), 60000); // "dnes" / "včera" roll over at midnight
     for (const k of Object.keys(this._last)) if (k.startsWith('gd:')) delete this._last[k];
     this._gdlg.replaceChildren();
     if (!this._gdlg.open) this._gdlg.showModal();
@@ -967,7 +1010,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
   }
 
   _call(domain, service, data) {
-    return this._hass.callService(domain, service, data);
+    return Promise.resolve(this._hass.callService(domain, service, data)).catch((e) => console.warn(`heating-card: ${domain}.${service} failed`, e));
   }
 
   _onClick(e) {
@@ -981,10 +1024,19 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     else if (act === 'gclose') this._gdlg.close();
     else if (act === 'open') this._openDialog(b.dataset.val);
     else if (act === 'program') {
-      if (programId(this._hass, c) !== b.dataset.val) this._call('select', 'select_option', { entity_id: eid(c, 'select', 'heating_program'), option: b.dataset.val });
+      // quick taps: the pending program counts as current until hass reports it (or PENDING_MS)
+      const pp = this._gdCtx.pending;
+      const cur = pp && Date.now() - pp.at < PENDING_MS ? pp.id : programId(this._hass, c);
+      if (cur === b.dataset.val) return;
+      this._gdCtx.pending = { id: b.dataset.val, at: Date.now() };
+      this._call('select', 'select_option', { entity_id: eid(c, 'select', 'heating_program'), option: b.dataset.val });
+      clearTimeout(this._gpt);
+      this._gpt = setTimeout(() => { this._gdCtx.pending = null; this._refreshGeneric(true); }, PENDING_MS + 50);
+      this._refreshGeneric(true);
     } else if (act === 'alternation') this._call('input_boolean', 'toggle', { entity_id: eid(c, 'input_boolean', 'heating_week_alternation') });
-    else if (act === 'holidays') this._call('input_select', 'select_option', { entity_id: eid(c, 'input_select', 'heating_holidays'), option: b.dataset.val });
-    else if (act === 'programs') { this._gdlg.close(); this._openSchedule(c.valves[0]); }
+    else if (act === 'holidays') {
+      if (st(this._hass, eid(c, 'input_select', 'heating_holidays')) !== b.dataset.val) this._call('input_select', 'select_option', { entity_id: eid(c, 'input_select', 'heating_holidays'), option: b.dataset.val });
+    } else if (act === 'programs') { this._gdlg.close(); this._openSchedule(c.valves[0]); }
     else if (act === 'history') { const id = this._vd; this._vdlg.close(); this._moreInfo(id); } // HA's dialog would sit under ours
     else if (act === 'schedule') { const id = this._vd; this._vdlg.close(); this._openSchedule(id); }
     else if (act === 'calibrate') {

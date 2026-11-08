@@ -425,3 +425,25 @@ test('programHtml: one checked radio, calendar select only with holidays = calen
   assert.match(none, /data-act="programs"/);
   assert.match(programParts(programView(world(), CFG)).head, /class="vd-title">Program</);
 });
+
+test('programView: missing select is read-only, unknown holidays press nothing, no calendar helper = no row', () => {
+  const noSel = world(); delete noSel.states[`select.heating_program_${C}`];
+  const v = programView(noSel, CFG);
+  assert.equal(v.selectable, false);
+  const html = programHtml(v);
+  assert.match(html, /role="radio"[^>]* disabled/);
+  assert.match(html, /Program nejde přepnout/);
+  assert.doesNotMatch(programHtml(programView(world(), CFG)), /role="radio"[^>]* disabled/);
+  for (const state of ['unavailable', 'unknown', '']) {
+    const u = programView(world({ [`input_select.heating_holidays_${C}`]: { state } }), CFG);
+    assert.equal(u.holidays, '');
+    const h = programHtml(u);
+    assert.doesNotMatch(h, /aria-pressed="true"/);
+    assert.doesNotMatch(h, /data-act="calendar"/);
+    assert.match(h, /data-act="holidays"/);
+  }
+  const noCal = world(); delete noCal.states[`input_text.heating_holiday_calendar_${C}`];
+  assert.doesNotMatch(programHtml(programView(noCal, CFG)), /data-act="calendar"/);
+  // a pending program is shown as current
+  assert.equal(programView(world(), CFG, Date.now(), undefined, 'vacation').programs.find((p) => p.current).id, 'vacation');
+});
