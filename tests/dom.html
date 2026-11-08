@@ -117,7 +117,10 @@
     wsCalls.push(msg);
     if (msg.type === 'recorder/statistics_during_period') return recorder(msg);
     const end = Date.now(), h = (n) => (end - n * 3600000) / 1000;
-    return Object.fromEntries(msg.entity_ids.map((id) => [id, id.startsWith('climate.')
+    const ph = (p) => ({ phases: Object.fromEntries(msg.entity_ids.filter((x) => x.startsWith('climate.')).map((x) => [x, [p]])) });
+    return Object.fromEntries(msg.entity_ids.map((id) => [id, id.startsWith('sensor.heating_valves_')
+      ? [{ lu: h(24), a: ph('normal') }, { lu: h(10), a: ph('fast') }, { lu: h(8), a: ph('normal') }, { lu: h(4), a: ph('overrun') }, { lu: h(3.5), a: ph('normal') }]
+      : id.startsWith('climate.')
       ? [{ lu: h(24), a: { current_temperature: 19, temperature: 18 } }, { lu: h(10), a: { current_temperature: 20.5, temperature: 21 } }, { lu: h(1), a: { current_temperature: 19.6 } }]
       : (id === 'binary_sensor.kids_window' ? [{ lu: h(24), s: 'on' }] : [{ lu: h(24), s: 'off' }])]));
   };
@@ -129,6 +132,8 @@
   const hass = { states, entities, callWS, callService: async (domain, service, data) => { calls.push({ domain, service, data }); } };
   const cfg = { circuit: C, valves: valveIds };
 
+  // ?ctl=arc|ruler|track: the valve dialog's target control (screenshots of the v8 sliders)
+  if (q.get('ctl')) states[`input_select.heating_target_control_${C}`] = { state: q.get('ctl'), attributes: {} };
   const card = document.createElement('heating-card');
   card.setConfig(cfg);
   card.hass = hass;
@@ -283,12 +288,38 @@
   const t = (sel) => vd.querySelector(sel)?.textContent.replace(/\s+/g, ' ').trim();
   r.vdBattery = vd.open && t('.vd-title') === 'Šatna' && t('.vd-alert') === 'Vyměň baterie (2) · hlavice 14 %, okno balkon 8 %' && !!vd.querySelector('.vd-head .badge.blink')
     && vd.querySelector('.vd-tile.low .fv').textContent === '14 %' && t('.vd-win .wn') === 'Okno balkon';
-  r.vdFacts = [...vd.querySelectorAll('.vd-tile .fv')].map((e) => e.textContent).join('|') === '14 %|−71 dBm|12 %|V pořádku';
+  r.vdFacts = [...vd.querySelectorAll('.vd-tile .fv')].map((e) => e.textContent).join('|') === '14 %|OK (−71 dBm)|12 %|V pořádku';
   r.vdWindows = vd.querySelectorAll('.vd-win').length === 2 && vd.querySelectorAll('.vd-h')[1].textContent === 'Okna (2)' && vd.querySelector('.vd-win .chip.low') && vd.querySelectorAll('.vd-win .chip').length === 2;
-  r.vdChart = !!vd.querySelector('.vd-chart svg path[stroke="#E8592C"]') && wsCalls.at(-1).entity_ids.length === 3 && vd.querySelectorAll('.band').length === 0;
+  r.vdChart = !!vd.querySelector('.vd-chart svg path[stroke="#E8592C"]') && wsCalls.at(-1).entity_ids.length === 4 && vd.querySelectorAll('.band').length === 0 && vd.querySelectorAll('.ph-fast').length === 1 && vd.querySelectorAll('.vd-chart text[text-anchor="end"]').length > 1;
+  // chart window: ‹ goes 6 h back (whole hours), › and Teď come back; a drag right by a quarter of the plot = 6 h back
+  const hourNow = Math.floor(Date.now() / 3600000) * 3600000;
+  const lastEnd = () => Date.parse(wsCalls.filter((m) => m.type === 'history/history_during_period').at(-1).end_time);
+  r.vdChartLive = t('.ch-nav span') === 'Posledních 24 h' && vd.querySelector('[data-act="chartNav"][data-d="1"]').disabled && !vd.querySelector('[data-act="chartNow"]');
+  vd.querySelector('[data-act="chartNav"][data-d="-1"]').click(); await tick(60);
+  r.vdChartBack = lastEnd() === hourNow - 6 * 3600000 && t('.ch-nav span') !== 'Posledních 24 h' && !!vd.querySelector('[data-act="chartNow"]');
+  vd.querySelector('[data-act="chartNow"]').click(); await tick(60);
+  const svgC = vd.querySelector('.ch-svg'), sr = svgC.getBoundingClientRect(), plotW = sr.width * 440 / 470;
+  const pc = (type, x) => svgC.dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, clientX: x, clientY: sr.top + 40 }));
+  pc('pointerdown', sr.left + 100); pc('pointermove', sr.left + 100 + plotW / 4);
+  r.vdChartDragging = vd.querySelector('.ch-svg').style.transform.startsWith('translateX(');
+  pc('pointerup', sr.left + 100 + plotW / 4); await tick(60);
+  r.vdChartDrag = lastEnd() === hourNow - 6 * 3600000;
+  vd.querySelector('[data-act="chartNav"][data-d="1"]').click(); await tick(60);
+  r.vdChartForward = t('.ch-nav span') === 'Posledních 24 h';
   r.vdStepEnabled = !vd.querySelector('[data-act="step"]').disabled;
   vd.querySelector('[data-d="1"]').click(); await tick();
   r.vdStep = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'climate', service: 'set_temperature', data: { entity_id: ids.dressing, temperature: 19.5 } }) && t('.tv') === '19,5 °C';
+  // target control: hidden for the default buttons; a track drag sends one set_temperature with the value under the pointer
+  r.vdCtlHidden = vd.querySelector('.ctl').hidden;
+  card.hass = { ...hass, states: { ...states, [`input_select.heating_target_control_${C}`]: { state: 'track', attributes: {} } } }; await tick();
+  const ctl = vd.querySelector('.ctl'), tr = ctl.querySelector('.tr').getBoundingClientRect();
+  const pe = (type, fx) => ctl.dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, clientX: tr.left + tr.width * fx, clientY: tr.top + 30 }));
+  const ctlCalls = calls.length;
+  pe('pointerdown', 0.3); pe('pointermove', 0.61);
+  r.vdCtlDrag = !ctl.hidden && t('.tv') === '20,5 °C' && calls.length === ctlCalls && ctl.getAttribute('aria-valuenow') === '20.5';
+  pe('pointerup', 0.61); await tick();
+  r.vdCtlSet = calls.length === ctlCalls + 1 && JSON.stringify(calls.at(-1).data) === JSON.stringify({ entity_id: ids.dressing, temperature: 20.5 });
+  card.hass = hass; await tick();
   vd.querySelector('[data-act="calibrate"]').click(); await tick();
   r.vdCalibrate = confirms.at(-1).startsWith('Kalibrovat hlavici?') && JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'script', service: `heating_calibrate_${C}`, data: { climate: ids.dressing } });
   vd.querySelector('[data-act="schedule"]').click(); await tick();
