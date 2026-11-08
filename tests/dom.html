@@ -54,7 +54,9 @@
     { climate: ids.bath, source: 'valve', state: 9 },
     { climate: ids.dressing, source: 'valve', state: 14 }, { climate: ids.dressing, source: 'window', state: 8 }] });
   set(`input_text.heating_status_${C}`, 'success|Program Víkend nastaven na všech 8 hlavic.');
-  set(`sensor.heating_program_${C}`, 'weekend', { program_names: { weekend: 'Víkend' } });
+  set(`sensor.heating_program_${C}`, 'weekend', { program_names: { weekend: 'Víkend', home_office: 'Home office', sick: 'Nemoc' } });
+  states[`sensor.heating_program_${C}`].last_changed = new Date().toISOString();
+  set(`select.heating_program_${C}`, 'weekend', { options: ['auto', 'weekend', 'home_office', 'vacation', 'sick'] });
   set(`sensor.heating_outdoor_temperature_${C}`, '6.2');
   set(`binary_sensor.heating_state_${C}`, 'on', { title: 'Topení přízemí' });
 
@@ -107,6 +109,11 @@
 
   // ?vd=dress|kids opens that valve's dialog (screenshots of the two V4 boards)
   if (q.get('vd')) { await press($$('.main')[q.get('vd') === 'kids' ? 5 : 7].querySelector('.dot')); await tick(200); }
+  // ?pd=1 opens the program dialog (screenshot of V6-Program), with the applying alert
+  if (q.get('pd')) {
+    card.hass = { ...hass, states: { ...states, [`sensor.heating_applying_${C}`]: { state: 'applying', attributes: { trigger: 'program', left: 4 } } } };
+    await tick(); $('[data-act="open"][data-val="program"]').click(); await tick(200);
+  }
   if (q.get('shot')) { document.getElementById('out').remove(); throw 'shot'; }
 
   const r = {};
@@ -287,6 +294,60 @@
   await press($$('.main')[0].querySelector('.dot')); await tick(100);
   r.vdNoHistory = vd.open && t('.chart-msg') === 'Historie není k dispozici.' && !!vd.querySelector('.vd-foot');
   vd.close(); await tick();
+
+  // program dialog (V6-Program)
+  const gd = $('dialog.gd');
+  const g = (sel) => gd.querySelector(sel);
+  $('[data-act="open"][data-val="program"]').click(); await tick(50);
+  r.pdOpen = gd.open && g('.vd-title').textContent === 'Program' && g('.sub').textContent === 'Topení přízemí' && !vd.open;
+  r.pdRows = gd.querySelectorAll('[role="radio"]').length === 5 && gd.querySelectorAll('[role="radio"][aria-checked="true"]').length === 1 && g('[aria-checked="true"] .n').textContent === 'Víkend' && g('[aria-checked="true"] .dot.heat') !== null;
+  r.pdAutoLine = g('[data-val="auto"] .d').textContent === 'rozvrh hlavic · lichý týden';
+  g('[data-val="vacation"]').click(); await tick();
+  r.pdSelect = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'select', service: 'select_option', data: { entity_id: `select.heating_program_${C}`, option: 'vacation' } });
+  const nCall = calls.length;
+  g('[data-val="weekend"]').click(); await tick();
+  r.pdSameNoCall = calls.length === nCall;
+  g('[data-act="alternation"]').click(); await tick();
+  r.pdAlternation = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'input_boolean', service: 'toggle', data: { entity_id: `input_boolean.heating_week_alternation_${C}` } });
+  g('[data-act="holidays"][data-val="none"]').click(); await tick();
+  r.pdHolidays = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'input_select', service: 'select_option', data: { entity_id: `input_select.heating_holidays_${C}`, option: 'none' } });
+  const sel = g('[data-act="calendar"]');
+  r.pdCalendarShown = sel.value === 'calendar.holidays_cz' && g('.sel + .help').textContent === 'Další: 17. 11. Den boje za svobodu';
+  sel.value = ''; sel.dispatchEvent(new Event('change', { bubbles: true, composed: true })); await tick();
+  r.pdCalendar = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'input_text', service: 'set_value', data: { entity_id: `input_text.heating_holiday_calendar_${C}`, value: '' } });
+  r.pdTiles = /^6 ze 8\|dnes \d+:\d\d$/.test([...gd.querySelectorAll('.vd-tile .fv')].map((e) => e.textContent).join('|'));
+  // live: hass updates the dialog in place (progress, holidays off hides the calendar row, the sync button spins)
+  const prog = g('.prog');
+  card.hass = { ...hass, states: { ...states, [`sensor.heating_applying_${C}`]: { state: 'applying', attributes: { trigger: 'program', left: 4 } }, [`input_select.heating_holidays_${C}`]: { state: 'none', attributes: states[`input_select.heating_holidays_${C}`].attributes } } }; await tick();
+  r.pdLive = g('.vd-alert').textContent.replace(/\s+/g, ' ').trim() === 'Nastavuji hlavice podle programu Víkend · 4 ze 8' && !g('[data-act="calendar"]') && g('[data-act="holidays"][data-val="none"]').getAttribute('aria-pressed') === 'true';
+  card.hass = { ...hass, states: { ...states, [`sensor.heating_applying_${C}`]: { state: 'applying', attributes: { trigger: 'sync', left: 4 } } } }; await tick();
+  r.pdSyncing = g('[data-act="sync"]').disabled && !!g('[data-act="sync"] .spin') && g('.vd-alert').textContent.includes('Srovnávám hlavice');
+  card.hass = hass; await tick();
+  g('[data-act="sync"]').click(); await tick();
+  r.pdSyncCall = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'input_button', service: 'press', data: { entity_id: `input_button.heating_sync_${C}` } });
+  // a pointer down in the dialog defers the render; an unrelated update rebuilds nothing
+  const rows = g('.prog');
+  card.hass = { ...hass, states: { ...states, 'sensor.unrelated': { state: '3', attributes: {} } } }; await tick();
+  r.pdNoRebuild = g('.prog') === rows;
+  // Upravit programy: the dialog closes, the schedule dialog opens for the first valve
+  g('[data-act="programs"]').click(); await tick();
+  r.pdPrograms = !gd.open && dlg.open && dlg.querySelector('heating-schedule-card').cfg.valve === valveIds[0];
+  dlg.close(); await tick();
+  // the x closes it; a missing program helper set still renders (no select = only `auto`)
+  $('[data-act="open"][data-val="program"]').click(); await tick(50);
+  g('[data-act="gclose"]').click(); await tick();
+  r.pdClose = !gd.open;
+  const poor = structuredClone(states);
+  for (const id of Object.keys(poor)) if (/heating_(week|holiday|schedule)|^calendar\.|^select\.heating_program/.test(id)) delete poor[id];
+  card.hass = { ...hass, states: poor }; await tick();
+  $('[data-act="open"][data-val="program"]').click(); await tick(50);
+  r.pdMissing = gd.open && gd.querySelectorAll('[role="radio"]').length === 1 && !g('[data-act="alternation"]') && !g('[data-act="holidays"]');
+  gd.close(); card.hass = hass; await tick();
+  // disconnect closes it
+  $('[data-act="open"][data-val="program"]').click(); await tick(50);
+  const host2 = card.parentNode; host2.removeChild(card); await tick();
+  r.pdDisconnect = !gd.open;
+  host2.appendChild(card); await tick(50);
 
   r.noErrors = errors.length === 0;
   const ok = Object.values(r).every(Boolean);

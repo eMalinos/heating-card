@@ -10,7 +10,7 @@ Karta pro Home Assistant, která zobrazuje jeden topný okruh v stylu Homecraft:
 
 **HACS (vlastní repozitář):** HACS → ⋮ → Vlastní repozitáře → `https://github.com/eMalinos/heating-card`, typ **Dashboard** → stáhnout **Heating Card** → obnovit prohlížeč.
 
-**Ručně:** zkopíruj [`dist/heating-card.js`](dist/heating-card.js) do `config/www/` a přidej ho jako zdroj dashboardu (Nastavení → Dashboardy → ⋮ → Zdroje → URL `/local/heating-card.js?v=0.1.0-beta.3`, typ **JavaScript module**). Po zkopírování nové verze změň `?v=`.
+**Ručně:** zkopíruj [`dist/heating-card.js`](dist/heating-card.js) do `config/www/` a přidej ho jako zdroj dashboardu (Nastavení → Dashboardy → ⋮ → Zdroje → URL `/local/heating-card.js?v=0.1.0-beta.4`, typ **JavaScript module**). Po zkopírování nové verze změň `?v=`.
 
 ## Konfigurace
 
@@ -29,11 +29,15 @@ info_gesture: icon_tap             # otevře dialog hlavice
 
 Gesta: `tap`, `double_tap`, `hold`, `icon_tap`, `icon_double_tap`, `icon_hold` nebo `none` (stejné hodnoty jako parametry topení); obě musí být různá, pokud nejsou obě `none`.
 
-Akce: segmenty režimu volají `input_select.select_option`, křížek u stavové zprávy ji smaže, **Srovnat** stiskne `input_button.heating_sync_<okruh>`, − / + mění cílovou teplotu hlavice o 0,5 °C (ne u hlavice s otevřeným oknem ani při vypnutém okruhu). Dialogy programů, nastavení a statistik přijdou později; `schedule_gesture` otevře `heating-schedule-card` v jednoduchém dialogu.
+Akce: segmenty režimu volají `input_select.select_option`, křížek u stavové zprávy ji smaže, **Srovnat** stiskne `input_button.heating_sync_<okruh>`, − / + mění cílovou teplotu hlavice o 0,5 °C (ne u hlavice s otevřeným oknem ani při vypnutém okruhu). Dialogy nastavení a statistik přijdou později; `schedule_gesture` otevře `heating-schedule-card` v jednoduchém dialogu.
 
 ## Dialog hlavice
 
 `info_gesture` otevře dialog hlavice (pod 600 px jako spodní list): ikona hlavice (blikající odznak baterie při slabé baterii), pod hlavičkou jediné upozornění (otevřené okno s minutami a připomínkou, jinak všechny slabé baterie hlavice), aktuální teplota s polohou ventilu, krokování cíle (zakázané při otevřeném okně nebo vypnutém okruhu), graf teploty a cíle za 24 h s úseky otevřeného okna jako tónovanými pásy, dlaždice *Hlavice* (baterie, signál, ventil, kalibrace; slabá baterie je červená a bliká), řádek pro každé okno (*Okna*) se stavem a vlastní baterií a patička: **Kalibrovat** (po potvrzení spustí `script.heating_calibrate_<okruh>` s `climate`) a **Rozvrh**. Tlačítko historie v hlavičce otevře more-info hlavice. Čidlo okna `unavailable` / `unknown` ukáže *Čidlo nedostupné*, nikdy *Zavřené*.
+
+## Dialog programu
+
+Tlačítko **Program** v prvním boxu otevře dialog programu (pod 600 px jako spodní list): programy okruhu jako seznam (klepnutí = okamžité přepnutí přes `select.heating_program_<okruh>`; aktuální je zvýrazněný s fajfkou), jedno upozornění, dokud Node-RED nastavuje hlavice (`Nastavuji hlavice podle programu … · 4 ze 7`), sekce *Týdny a svátky* (přepínač střídání týdnů = `input_boolean.heating_week_alternation_<okruh>`, *Svátky jako všední den / neděle* = `input_select.heating_holidays_<okruh>`, u *neděle* výběr kalendáře zapisující `input_text.heating_holiday_calendar_<okruh>` a další svátek), dlaždice *Hlavic podle rozvrhu* a *Program změněn* a patička: **Srovnat hlavice** a **Upravit programy** (otevře dialog rozvrhu, kde se programy upravují). Názvy jsou z `program_names` senzoru `sensor.heating_program_<okruh>`, nabídka programů ze `select.heating_program_<okruh>`, týden a další svátek ze `sensor.heating_schedule_<okruh>`. Chybějící helper skryje svůj řádek.
 
 ## Vzhled
 

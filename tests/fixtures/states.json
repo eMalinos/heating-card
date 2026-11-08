@@ -16,6 +16,12 @@
   },
   "state": "on"
  },
+ "calendar.holidays_cz": {
+  "state": "off",
+  "attributes": {
+   "friendly_name": "Svátky ČR"
+  }
+ },
  "climate.bedroom_valve": {
   "attributes": {
    "current_temperature": 15.6,
@@ -66,6 +72,13 @@
    "temperature": 5.0
   },
   "state": "heat"
+ },
+ "input_boolean.heating_week_alternation_circuit_demo": {
+  "state": "on",
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Střídat týdny circuit_demo"
+  }
  },
  "input_button.heating_sync_circuit_demo": {
   "attributes": {
@@ -133,7 +146,7 @@
     "calendar"
    ]
   },
-  "state": "none"
+  "state": "calendar"
  },
  "input_select.heating_mode_circuit_demo": {
   "attributes": {
@@ -146,6 +159,15 @@
    ]
   },
   "state": "on"
+ },
+ "input_text.heating_holiday_calendar_circuit_demo": {
+  "state": "calendar.holidays_cz",
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Kalendář svátků circuit_demo",
+   "max": 255,
+   "min": 0
+  }
  },
  "input_text.heating_status_circuit_demo": {
   "attributes": {
@@ -225,6 +247,20 @@
    ]
   },
   "state": "auto"
+ },
+ "sensor.heating_schedule_circuit_demo": {
+  "state": "ok",
+  "attributes": {
+   "friendly_name": "heating_schedule_circuit_demo",
+   "week": "odd",
+   "week_number": 45,
+   "holidays_next": [
+    {
+     "date": "2026-11-17",
+     "name": "Den boje za svobodu"
+    }
+   ]
+  }
  },
  "sensor.heating_valves_circuit_demo": {
   "attributes": {

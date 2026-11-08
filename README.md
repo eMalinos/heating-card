@@ -10,7 +10,7 @@ A Home Assistant card for one heating circuit, in the Homecraft look: a circuit 
 
 **HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/heating-card`, type **Dashboard** → download **Heating Card** → reload the browser.
 
-**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.0-beta.3`, type **JavaScript module**). Change `?v=` after copying a new version.
+**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.0-beta.4`, type **JavaScript module**). Change `?v=` after copying a new version.
 
 ## Configuration
 
@@ -31,7 +31,7 @@ Gestures are `tap`, `double_tap`, `hold`, `icon_tap`, `icon_double_tap`, `icon_h
 
 Entities read (`<c>` is the circuit): `switch.boiler_<c>`, `input_select.heating_mode_<c>`, `input_select.heating_auto_rule_<c>`, `input_datetime.heating_time_from_<c>` / `_to_<c>`, `input_number.heating_weather_threshold_<c>`, `input_text.heating_status_<c>`, `sensor.heating_program_<c>`, `sensor.heating_applying_<c>`, `sensor.heating_off_schedule_<c>`, `sensor.heating_valves_<c>`, `sensor.heating_low_batteries_<c>`, `binary_sensor.heating_active_<c>`, `binary_sensor.heating_state_<c>`, `sensor.heating_outdoor_temperature_<c>` and each valve's `climate` entity.
 
-Actions: the mode segments call `input_select.select_option`, the cross on the status message clears `input_text.heating_status_<c>`, **Srovnat** presses `input_button.heating_sync_<c>`, − / + change a valve's target by 0.5 °C (not on a valve with an open window or while the circuit is off). The program, settings and statistics dialogs come later; `schedule_gesture` opens `heating-schedule-card` in a simple dialog.
+Actions: the mode segments call `input_select.select_option`, the cross on the status message clears `input_text.heating_status_<c>`, **Srovnat** presses `input_button.heating_sync_<c>`, − / + change a valve's target by 0.5 °C (not on a valve with an open window or while the circuit is off). The settings and statistics dialogs come later; `schedule_gesture` opens `heating-schedule-card` in a simple dialog.
 
 ## Valve dialog
 
@@ -40,6 +40,12 @@ Actions: the mode segments call `input_select.select_option`, the cross on the s
 Device facts (battery, signal, valve position, calibration) are found on the valve's device by device class / entity id suffix, like the Mushroom detail does; windows come from the `windows` attribute of `sensor.heating_off_schedule_<c>`; the reminder from `input_number.heating_window_reminder_<c>`; the low-battery threshold from `input_number.heating_low_battery_threshold` (30 % by default). The chart reads the history over `history/history_during_period`; without history the dialog shows a note instead.
 
 ![Valve dialog, low batteries](docs/valve-battery.png) ![Valve dialog, open window](docs/valve-window.png)
+
+## Program dialog
+
+The **Program** button in box 1 opens the program dialog (a bottom sheet under 600 px): the circuit's programs as a radio list (tap = switch right away through `select.heating_program_<c>`; the current one is raised with a check), one alert while Node-RED applies the program or a sync (`Nastavuji hlavice podle programu … · 4 ze 7`), the *Týdny a svátky* section (week alternation switch = `input_boolean.heating_week_alternation_<c>`, *Svátky jako všední den / neděle* = `input_select.heating_holidays_<c>`, and with *neděle* a calendar select writing `input_text.heating_holiday_calendar_<c>` plus the next holiday), tiles *Hlavic podle rozvrhu* and *Program změněn*, and the footer: **Srovnat hlavice** and **Upravit programy** (opens the schedule dialog, where programs are edited). Names come from `program_names` of `sensor.heating_program_<c>`; the program options from `select.heating_program_<c>`; week and next holiday from `sensor.heating_schedule_<c>`. A missing helper hides its row.
+
+![Program dialog](docs/program-dialog.png)
 
 ## Look
 
@@ -57,6 +63,7 @@ python3 -m http.server 8766 &
 
 ## Changelog
 
+- **0.1.0-beta.4** — program dialog (box 1 *Program* button): program list, applying progress, week alternation, holidays and calendar, *Srovnat hlavice* / *Upravit programy*; generic dialog frame for the settings and statistics dialogs.
 - **0.1.0-beta.3** — tiles, soft panels and window rows read `--hfb-tile-bg` / `-border` / `-shadow` / `-radius`, so they follow Bento's inner tile style.
 - **0.1.0-beta.2** — valve dialog (batteries, windows, 24 h chart, calibrate); `info_gesture` opens it instead of more-info.
 - **0.1.0** — circuit and valves boxes.

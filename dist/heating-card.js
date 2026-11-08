@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.0-beta.3';
+const VERSION = '0.1.0-beta.4';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -21,6 +21,15 @@ const ICON = {
   closed: 'M22 2V22H20V13H14.82A3 3 0 0 1 9.18 13H4V22H2V2H4V11H9.18A3 3 0 0 1 14.82 11H20V2Z',
   window: 'M21 20V2H3V20H1V23H23V20M19 4V11H17V4M5 4H7V11H5M5 20V13H7V20M9 20V4H15V20M17 20V13H19V20Z',
   battery: 'M14 20H6V6H14M14.67 4H13V2H7V4H5.33C4.6 4 4 4.6 4 5.33V20.67C4 21.4 4.6 22 5.33 22H14.67C15.4 22 16 21.4 16 20.67V5.33C16 4.6 15.4 4 14.67 4M21 7H19V13H21V8M21 15H19V17H21V15Z',
+  calendarWeek: 'M6 1H8V3H16V1H18V3H19C20.11 3 21 3.9 21 5V19C21 20.11 20.11 21 19 21H5C3.89 21 3 20.1 3 19V5C3 3.89 3.89 3 5 3H6V1M5 8V19H19V8H5M7 10H17V12H7V10Z',
+  calendarStar: 'M19 19H5V8H19M16 1V3H8V1H6V3H5C3.9 3 3 3.9 3 5V19C3 20.11 3.9 21 5 21H19C20.11 21 21 20.11 21 19V5C21 3.9 20.11 3 19 3H18V1M10.88 12H7.27L10.19 14.11L9.08 17.56L12 15.43L14.92 17.56L13.8 14.12L16.72 12H13.12L12 8.56L10.88 12Z',
+  homeOutline: 'M12 5.69L17 10.19V18H15V12H9V18H7V10.19L12 5.69M12 3L2 12H5V20H11V14H13V20H19V12H22',
+  laptop: 'M4,6H20V16H4M20,18A2,2 0 0,0 22,16V6C22,4.89 21.1,4 20,4H4C2.89,4 2,4.89 2,6V16A2,2 0 0,0 4,18H0V20H24V18H20Z',
+  beach: 'M15,18.54C17.13,18.21 19.5,18 22,18V22H5C5,21.35 8.2,19.86 13,18.9V12.4C12.16,12.65 11.45,13.21 11,13.95C10.39,12.93 9.27,12.25 8,12.25C6.73,12.25 5.61,12.93 5,13.95C5.03,10.37 8.5,7.43 13,7.04V7A1,1 0 0,1 14,6A1,1 0 0,1 15,7V7.04C19.5,7.43 22.96,10.37 23,13.95C22.39,12.93 21.27,12.25 20,12.25C18.73,12.25 17.61,12.93 17,13.95C16.55,13.21 15.84,12.65 15,12.39V18.54M7,2A5,5 0 0,1 2,7V2H7Z',
+  sick: 'M7.32 10.56L8.38 9.5L7.32 8.44L8.38 7.38L10.5 9.5L8.38 11.62L7.32 10.56M4.5 9C4.53 9 4.55 9 4.58 9C5.77 6.07 8.64 4 12 4C14.19 4 16.16 4.88 17.61 6.3C17.76 5.7 18.06 5 18.42 4.34C16.68 2.88 14.44 2 12 2C7.11 2 3.05 5.5 2.18 10.14C2.74 9.44 3.59 9 4.5 9M21 10.5C20.58 10.5 20.18 10.41 19.81 10.28C19.93 10.83 20 11.41 20 12C20 16.42 16.42 20 12 20C8.64 20 5.77 17.93 4.58 15C4.55 15 4.53 15 4.5 15C4 15 3.46 14.86 3 14.6C2.68 14.42 2.41 14.18 2.18 13.9C3.07 18.5 7.11 22 12 22C17.5 22 22 17.5 22 12C22 11.45 21.94 10.91 21.86 10.38C21.58 10.45 21.3 10.5 21 10.5M21 3C21 3 19 5.9 19 7S19.9 9 21 9 23 8.1 23 7 21 3 21 3M15.62 7.38L13.5 9.5L15.62 11.62L16.68 10.56L15.62 9.5L16.68 8.44L15.62 7.38M8.56 17C9.25 15.81 10.53 15 12 15S14.75 15.81 15.44 17H17.12C16.32 14.95 14.33 13.5 12 13.5C11.13 13.5 10.3 13.7 9.57 14.07L6 12C6 11.5 5.73 11 5.25 10.71C4.53 10.3 3.62 10.54 3.2 11.26C2.79 12 3.03 12.89 3.75 13.31C4.23 13.59 4.8 13.56 5.24 13.31L8.21 15.03C7.64 15.56 7.18 16.24 6.88 17H8.56Z',
+  check: 'M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z',
+  sync: 'M12,18A6,6 0 0,1 6,12C6,11 6.25,10.03 6.7,9.2L5.24,7.74C4.46,8.97 4,10.43 4,12A8,8 0 0,0 12,20V23L16,19L12,15M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12C18,13 17.75,13.97 17.3,14.8L18.76,16.26C19.54,15.03 20,13.57 20,12A8,8 0 0,0 12,4Z',
+  pencil: 'M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z',
 };
 
 // Texts as in library/heating/src/heating_texts.jinja (ui.valve_*, ui.hero_*).
@@ -98,6 +107,9 @@ export function valveView(hass, cfg, climate) {
   };
 }
 
+// The circuit's title: the configured heading, the area title the feature publishes, else the circuit id.
+const circuitTitle = (hass, cfg) => cfg.heading || at(hass, eid(cfg, 'binary_sensor', 'heating_state'), 'title') || cfg.circuit;
+
 // Box 1: header subtitle, mode + hint, status, program, off-schedule count, applying, outdoor value.
 export function circuitView(hass, cfg) {
   const e = (d, n) => eid(cfg, d, n);
@@ -133,17 +145,10 @@ export function circuitView(hass, cfg) {
   const text = (m ? m[2] : rawStatus).trim();
   const status = text && !['unknown', 'unavailable'].includes(text) ? { level: m ? m[1] : 'info', text } : null;
 
-  // program id: the sensor, else the select when its state is a real option; never "unavailable"
-  let programId = st(hass, e('sensor', 'heating_program'));
-  if (BAD.includes(programId)) {
-    const s = st(hass, e('select', 'heating_program'));
-    programId = !BAD.includes(s) && (at(hass, e('select', 'heating_program'), 'options') ?? []).includes(s) ? s : null;
-  }
-  const programName = programId == null ? '—'
-    : at(hass, e('sensor', 'heating_program'), 'program_names')?.[programId] ?? T.program[programId] ?? programId;
+  const programName = programLabel(hass, cfg, programId(hass, cfg));
   const ap = e('sensor', 'heating_applying');
   return {
-    title: cfg.heading || at(hass, e('binary_sensor', 'heating_state'), 'title') || cfg.circuit,
+    title: circuitTitle(hass, cfg),
     boilerOn, subtitle, demand, mode, hint, status, programName,
     offSchedule: num(st(hass, e('sensor', 'heating_off_schedule'))) ?? 0,
     applying: { on: st(hass, ap) === 'applying', trigger: at(hass, ap, 'trigger'), left: num(at(hass, ap, 'left')) ?? 0 },
@@ -436,6 +441,7 @@ function box1Html(c) {
       <div><div class="lbl">Mimo rozvrh</div><div class="v">${c.offSchedule} <small>${pluralWord(c.offSchedule, 'hlavice', 'hlavice', 'hlavic')}</small></div></div>
     </div>
     <button class="sb" data-act="sync" data-k="sync"${syncing ? ' disabled' : ''}>${syncing ? spinner : ''}Srovnat</button>
+    <button class="sb" data-act="open" data-val="program" data-k="open:program">Program</button>
   </div>`;
 }
 
@@ -468,6 +474,156 @@ const CIRCUIT_ENTITIES = [
 ];
 export const watchedIds = (cfg) => [...CIRCUIT_ENTITIES.map(([d, n]) => eid(cfg, d, n)), ...cfg.valves];
 
+// ---- Generic dialog frame (#445; reused by the settings and statistics dialogs) ----
+
+// Head of a generic dialog: icon circle, context line (the circuit title), title, close button.
+export const dialogHead = (dotClass, iconPath, title, context) => `<span class="dot ${esc(dotClass)}">${svg(iconPath, 20)}</span>
+  <div class="txt"><div class="sub">${esc(context)}</div><h2 class="vd-title">${esc(title)}</h2></div>
+  <button class="x big" data-act="gclose" data-k="gclose" aria-label="Zavřít">${stroke('M6 6l12 12M18 6 6 18', 20)}</button>`;
+
+// The fixed frame: a head slot and a body slot (patched separately, see HeatingCard._refreshGeneric).
+const gdShell = '<div class="vd-head" data-p="head"></div><div class="s" data-p="body"></div>';
+
+// ---- Program dialog (design V6-Program) ----
+
+const HOLIDAY_ID = ['input_text', 'heating_holiday_calendar'];
+
+// The program id: the sensor, else the select when its state is a real option; never "unavailable".
+export function programId(hass, cfg) {
+  const sensor = st(hass, eid(cfg, 'sensor', 'heating_program'));
+  if (!BAD.includes(sensor)) return sensor;
+  const sel = eid(cfg, 'select', 'heating_program');
+  const s = st(hass, sel);
+  return !BAD.includes(s) && (at(hass, sel, 'options') ?? []).includes(s) ? s : null;
+}
+
+const programLabel = (hass, cfg, id) => (id == null ? '—'
+  : at(hass, eid(cfg, 'sensor', 'heating_program'), 'program_names')?.[id] ?? T.program[id] ?? id);
+
+export function programIcon(id) {
+  if (id === 'auto') return ICON.calendarWeek;
+  if (/weekend|vikend/i.test(id)) return ICON.homeOutline;
+  if (/office/i.test(id)) return ICON.laptop;
+  if (/holiday|vacation|dovolena/i.test(id)) return ICON.beach;
+  if (/sick|nemoc/i.test(id)) return ICON.sick;
+  return ICON.calendarStar;
+}
+
+// `dnes 18:02` / `včera 18:02` / `7. 11. 18:02`; `—` for a missing or unparsable time.
+export function whenText(iso, now = Date.now()) {
+  const t = new Date(iso);
+  if (!iso || Number.isNaN(t.getTime())) return '—';
+  const hm = `${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`;
+  const today = new Date(now).setHours(0, 0, 0, 0);
+  const days = Math.round((today - new Date(t).setHours(0, 0, 0, 0)) / 86400000);
+  return `${days === 0 ? 'dnes' : days === 1 ? 'včera' : `${t.getDate()}. ${t.getMonth() + 1}.`} ${hm}`;
+}
+
+// `17. 11. Den boje za svobodu` from `{date: '2026-11-17', name}`.
+const holidayText = (h) => {
+  const m = /^(\d{4})-(\d\d)-(\d\d)/.exec(h?.date ?? '');
+  return m ? `${Number(m[3])}. ${Number(m[2])}. ${h.name ?? ''}`.trim() : '';
+};
+
+// Everything the program dialog shows. Pure; `now` (ms) only for `Program změněn`.
+export function programView(hass, cfg, now = Date.now()) {
+  const e = (d, n) => eid(cfg, d, n);
+  const current = programId(hass, cfg);
+  const ids = at(hass, e('select', 'heating_program'), 'options') ?? ['auto'];
+  const altState = st(hass, e('input_boolean', 'heating_week_alternation'));
+  const alternation = altState === 'on' ? true : altState === 'off' ? false : null; // null: no helper, row hidden
+  const sch = e('sensor', 'heating_schedule');
+  const week = at(hass, sch, 'week');
+  const weekWord = week === 'odd' ? 'lichý' : week === 'even' ? 'sudý' : '';
+  const weekNumber = num(at(hass, sch, 'week_number'));
+  const programs = ids.map((id) => ({
+    id, name: programLabel(hass, cfg, id), icon: programIcon(id), current: id === current,
+    detail: id === 'auto' ? `rozvrh hlavic${alternation && weekWord ? ` · ${weekWord} týden` : ''}` : '',
+  }));
+
+  const ap = e('sensor', 'heating_applying');
+  const trigger = at(hass, ap, 'trigger');
+  const total = cfg.valves.length;
+  const applying = st(hass, ap) === 'applying' && (trigger === 'program' || trigger === 'sync')
+    ? { trigger, name: programLabel(hass, cfg, current), progress: `${Math.min(total, Math.max(0, total - (num(at(hass, ap, 'left')) ?? 0)))} ze ${total}` }
+    : null;
+
+  const holState = st(hass, e('input_select', 'heating_holidays'));
+  const holidays = hass.states?.[e('input_select', 'heating_holidays')] ? (holState === 'calendar' ? 'calendar' : 'none') : null;
+  const calendar = st(hass, e(...HOLIDAY_ID)) ?? '';
+  const calendars = Object.keys(hass.states ?? {}).filter((id) => id.startsWith('calendar.'))
+    .map((id) => ({ id, name: at(hass, id, 'friendly_name') || id }));
+  if (calendar && !BAD.includes(calendar) && !calendars.some((c) => c.id === calendar)) calendars.push({ id: calendar, name: calendar });
+  const off = num(st(hass, e('sensor', 'heating_off_schedule'))) ?? 0;
+  const scheduled = Math.max(0, total - off);
+  const changed = hass.states?.[e('sensor', 'heating_program')]?.last_changed;
+  return {
+    title: circuitTitle(hass, cfg), programs, current, applying, syncing: applying?.trigger === 'sync',
+    alternation, weekLabel: weekWord ? `Teď ${weekWord}${weekNumber == null ? '' : ` (${weekNumber}.)`}` : '',
+    holidays, calendar: BAD.includes(calendar) ? '' : calendar, calendars,
+    nextHoliday: holidayText((at(hass, sch, 'holidays_next') ?? [])[0]),
+    tiles: {
+      schedule: { value: `${scheduled} ze ${total}`, caption: applying ? 'zbytek se nastavuje' : off === 0 ? 'všechny' : `${off} mimo rozvrh` },
+      changed: { value: whenText(changed, now) },
+    },
+  };
+}
+
+// The program dialog in the frame's slots: {head, body}.
+export function programParts(v) {
+  const alert = v.applying ? `<div class="alert info vd-alert" role="status"><span class="spin" style="display:flex;flex:none">${svg(ICON.sync, 18)}</span><span>${
+    v.applying.trigger === 'sync' ? 'Srovnávám hlavice' : `Nastavuji hlavice podle programu <b>${esc(v.applying.name)}</b>`} · ${esc(v.applying.progress)}</span></div>` : '';
+  const rows = v.programs.map((p) => `<button role="radio" aria-checked="${p.current}" data-act="program" data-val="${esc(p.id)}" data-k="p:${esc(p.id)}"${p.current ? ' class="on"' : ''}>
+      <span class="dot sm ${p.current ? 'heat' : 'idle'}">${svg(p.icon, 18)}</span>
+      <span class="txt"><span class="n">${esc(p.name)}</span>${p.detail ? `<span class="d">${esc(p.detail)}</span>` : ''}</span>
+      <span class="ck">${svg(ICON.check, 16)}</span></button>`).join('');
+  const alternation = v.alternation == null ? '' : `<div class="fld soft">
+    <div class="fl"><div class="t">Střídat lichý a sudý týden</div><div class="help">Rozvrhy označené lichý / sudý platí jen v daném týdnu.${v.weekLabel ? ` ${esc(v.weekLabel)}.` : ''}</div></div>
+    <button class="sw${v.alternation ? ' on' : ''}" role="switch" aria-checked="${v.alternation}" aria-label="Střídat lichý a sudý týden" data-act="alternation" data-k="alternation"></button>
+  </div>`;
+  const holidays = v.holidays == null ? '' : `<div class="seg two" role="group" aria-label="Svátky">
+    ${[['none', 'Svátky jako všední den'], ['calendar', 'Svátky jako neděle']].map(([val, label]) =>
+      `<button data-act="holidays" data-val="${val}" data-k="hol:${val}" aria-pressed="${v.holidays === val}"${v.holidays === val ? ' class="on"' : ''}>${label}</button>`).join('')}
+  </div>${v.holidays === 'calendar' ? `<div class="fld soft">
+    <div class="fl"><div class="lbl">Kalendář svátků</div>
+      <select class="sel" data-act="calendar" data-k="calendar" aria-label="Kalendář svátků"><option value=""${v.calendar ? '' : ' selected'}>— vyber kalendář —</option>${
+        v.calendars.map((c) => `<option value="${esc(c.id)}"${c.id === v.calendar ? ' selected' : ''}>${esc(c.name)} · ${esc(c.id)}</option>`).join('')}</select>
+      ${v.nextHoliday ? `<div class="help">Další: ${esc(v.nextHoliday)}</div>` : ''}</div>
+  </div>` : ''}`;
+  return {
+    head: dialogHead('run', ICON.calendarWeek, 'Program', v.title),
+    body: `${alert}
+  <div class="prog" role="radiogroup" aria-label="Program">${rows}</div>
+  <div class="help prog-help">Program vybere rozvrh všech hlavic okruhu. Ruční změnu na hlavici přepíše další krok rozvrhu.</div>
+  <div class="vd-h">Týdny a svátky</div>
+  ${alternation}${holidays}
+  <div class="vd-facts">
+    <div class="vd-tile"><div class="lbl">Hlavic podle rozvrhu</div><div class="fv">${esc(v.tiles.schedule.value)}</div><div class="cap">${esc(v.tiles.schedule.caption)}</div></div>
+    <div class="vd-tile"><div class="lbl">Program změněn</div><div class="fv">${esc(v.tiles.changed.value)}</div></div>
+  </div>
+  <div class="vd-foot">
+    <button class="sb soft" data-act="sync" data-k="sync"${v.syncing ? ' disabled' : ''}>${v.syncing ? spinner : svg(ICON.sync, 16)}Srovnat hlavice</button>
+    <button class="sb primary" data-act="programs" data-k="programs">${svg(ICON.pencil, 16)}Upravit programy</button>
+  </div>`,
+  };
+}
+
+export const programHtml = (v) => { const p = programParts(v); return p.head + p.body; };
+
+// Generic dialogs by kind: the entity ids a dialog reads (a hass update re-renders it only when one changed)
+// and its {head, body}. #446 / #447 add `settings` / `stats` here.
+const DIALOGS = {
+  program: {
+    ids: (hass, cfg) => [
+      ...[['select', 'heating_program'], ['sensor', 'heating_program'], ['sensor', 'heating_applying'], ['sensor', 'heating_schedule'],
+        ['input_boolean', 'heating_week_alternation'], ['input_select', 'heating_holidays'], HOLIDAY_ID, ['sensor', 'heating_off_schedule'],
+        ['binary_sensor', 'heating_state']].map(([d, n]) => eid(cfg, d, n)),
+      ...Object.keys(hass.states ?? {}).filter((id) => id.startsWith('calendar.')),
+    ],
+    parts: (hass, cfg) => programParts(programView(hass, cfg)),
+  },
+};
+
 const STYLE = `
 :host { display: flex; flex-direction: column; gap: 12px; --c-card: var(--hfb-card, var(--card-background-color, #fff)); --c-border: var(--hfb-border, var(--divider-color, #e0e0e0)); --c-fill: var(--hfb-fill, var(--secondary-background-color, #f0f2f5)); --c-tile-bg: var(--hfb-tile-bg, var(--c-fill)); --c-tile-border: var(--hfb-tile-border, none); --c-tile-shadow: var(--hfb-tile-shadow, none); --c-tile-radius: var(--hfb-tile-radius, 14px); --c-text: var(--hfb-text, var(--primary-text-color, #1c2128)); --c-text2: var(--hfb-text-2, var(--secondary-text-color, #6e7682)); --c-accent: var(--hfb-accent, var(--primary-color, #4f6b8c)); --c-raised: var(--hfb-btn-raised-bg, var(--card-background-color, #fff)); --c-raised-sh: var(--hfb-btn-raised-shadow, none); --c-err: var(--error-color, #e5484d); color: var(--c-text); }
 * { box-sizing: border-box; }
@@ -495,7 +651,7 @@ button.dot { border: 0; padding: 0; cursor: pointer; font: inherit; }
 .seg button { height: 34px; border: 0; border-radius: 9px; background: transparent; font-size: 13px; font-weight: 500; color: var(--c-text2); display: flex; align-items: center; justify-content: center; gap: 6px; }
 .seg button.on { background: var(--hfb-seg-on, var(--card-background-color, #fff)); color: var(--hfb-seg-on-color, var(--primary-text-color, #1c2128)); font-weight: 600; box-shadow: var(--hfb-seg-on-shadow, none); }
 .soft { background: var(--c-fill); border-radius: 14px; }
-.panel.soft, .vd-target.soft { background: var(--c-tile-bg); border: var(--c-tile-border); box-shadow: var(--c-tile-shadow); border-radius: var(--c-tile-radius); }
+.panel.soft, .vd-target.soft, .fld.soft { background: var(--c-tile-bg); border: var(--c-tile-border); box-shadow: var(--c-tile-shadow); border-radius: var(--c-tile-radius); }
 .panel { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 14px; }
 .facts { flex: 1; min-width: 0; display: flex; gap: 20px; }
 .lbl { font-size: 11px; color: var(--c-text2); }
@@ -563,6 +719,23 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .vd-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
 .sb.soft { background: var(--c-fill); box-shadow: none; font-weight: 600; }
 .sb.primary { background: var(--hfb-btn-primary-bg, var(--primary-text-color, #1c2128)); color: var(--hfb-btn-primary-color, var(--card-background-color, #fff)); box-shadow: none; font-weight: 600; }
+/* program dialog (V6-Program); dialog.gd is a dialog.vd, so it shares the sheet rules */
+.dot.sm { width: 32px; height: 32px; }
+.help { font-size: 12px; color: var(--c-text2); line-height: 1.4; } .prog-help { margin-top: -6px; }
+.prog { display: flex; flex-direction: column; gap: 4px; padding: 4px; background: var(--hfb-seg-track, var(--secondary-background-color, #f0f2f5)); border-radius: 14px; }
+.prog button { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; border-radius: 11px; background: transparent; padding: 8px 10px; text-align: left; }
+.prog button.on { background: var(--hfb-seg-on, var(--card-background-color, #fff)); box-shadow: var(--hfb-seg-on-shadow, none); }
+.prog .n { display: block; font-size: 14px; font-weight: 600; } .prog .d { display: block; font-size: 12px; color: var(--c-text2); }
+.prog .ck { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; color: transparent; }
+.prog button.on .ck { background: var(--c-accent); color: var(--hfb-dot-on-icon, #fff); }
+.fld { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 8px 8px 14px; }
+.fld .fl { flex: 1; min-width: 0; } .fld .t { font-size: 14px; font-weight: 600; } .fld .help { margin-top: 2px; }
+.sw { width: 40px; height: 24px; border: 0; border-radius: 12px; padding: 0; margin-right: 6px; position: relative; flex: none; background: color-mix(in srgb, var(--c-text2) 35%, transparent); }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--hfb-dot-on-icon, #fff); box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
+.sw.on { background: var(--c-accent); } .sw.on::after { left: 19px; }
+.seg.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sel { max-width: 100%; margin-top: 2px; border: 0; border-radius: 10px; padding: 6px 8px; background: var(--c-card); color: var(--c-text); font: inherit; font-size: 14px; font-weight: 600; }
+.vd-tile .cap { font-size: 12px; color: var(--c-text2); margin-top: 2px; }
 @media (max-width: 599px) {
   dialog.vd { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 24px 24px 0 0; max-height: 92vh; }
 }
@@ -579,10 +752,12 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     this._pressed = false; // a pointer is down: renders wait
     this._dirty = false;
     this.attachShadow({ mode: 'open' });
-    this.shadowRoot.innerHTML = `<style>${STYLE}</style><div class="wrap" style="display:contents"></div><dialog aria-label="Rozvrh"></dialog><dialog class="vd" aria-label="Detail hlavice"></dialog>`;
+    this.shadowRoot.innerHTML = `<style>${STYLE}</style><div class="wrap" style="display:contents"></div><dialog aria-label="Rozvrh"></dialog><dialog class="vd" aria-label="Detail hlavice"></dialog><dialog class="vd gd"></dialog>`;
     this._wrap = this.shadowRoot.querySelector('.wrap');
     this._dlg = this.shadowRoot.querySelector('dialog:not(.vd)');
-    this._vdlg = this.shadowRoot.querySelector('dialog.vd');
+    this._vdlg = this.shadowRoot.querySelector('dialog.vd:not(.gd)');
+    this._gdlg = this.shadowRoot.querySelector('dialog.gd');
+    this._gd = null; // the generic dialog's kind (a DIALOGS key) while it is open
     this._vd = null; // the valve whose dialog is open
     this._chart = null; // chartModel() result, 'none' or null (loading)
     this._seq = 0; // drops stale history responses
@@ -597,9 +772,13 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
       if (g && !g.main.contains(e.relatedTarget)) this._cancel();
     });
     root.addEventListener('keydown', (e) => this._key(e));
+    root.addEventListener('change', (e) => { // the holiday calendar select
+      const sel = e.target.closest?.('[data-act="calendar"]');
+      if (sel && this._cfg) this._call('input_text', 'set_value', { entity_id: eid(this._cfg, ...HOLIDAY_ID), value: sel.value });
+    });
     this._dlg.addEventListener('close', () => { this._dlg.replaceChildren(); this._sched = null; });
     // a click outside the sheet's box closes it (padding and gaps are inside the box)
-    for (const dlg of [this._dlg, this._vdlg]) {
+    for (const dlg of [this._dlg, this._vdlg, this._gdlg]) {
       dlg.addEventListener('click', (e) => {
         if (e.target !== dlg) return;
         const r = dlg.getBoundingClientRect();
@@ -615,6 +794,12 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
       this._vdSeen = null;
       this._vdlg.replaceChildren();
     });
+    this._gdlg.addEventListener('close', () => {
+      if (this._gdlg.open) return;
+      this._gd = null;
+      this._gdSeen = null;
+      this._gdlg.replaceChildren();
+    });
   }
 
   // Timers and dialogs end with the element (a dashboard edit or navigation removes it); nothing is restored on reconnect.
@@ -626,6 +811,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     this._tap = null;
     this._seq++;
     if (this._vdlg.open) this._vdlg.close();
+    if (this._gdlg.open) this._gdlg.close();
     if (this._dlg.open) this._dlg.close();
   }
 
@@ -645,6 +831,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
   set hass(hass) {
     this._hass = hass;
     if (this._sched) this._sched.hass = hass;
+    this._refreshGeneric();
     this._refreshDialog(); // the dialog also reads the valve's device entities and the windows' batteries
     if (!this._cfg) return;
     const next = this._ids.map((id) => hass.states?.[id]);
@@ -698,6 +885,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     this._set(this._wrap.querySelector('[data-p="sum"]'), esc(parts.summary), 'sum');
     this._wrap.querySelectorAll('.tw').forEach((el, i) => this._set(el, parts.tiles[i], `t${i}`));
     this._refreshDialog(true);
+    this._refreshGeneric(true);
   }
 
   _refreshDialog(force = false, first = false) {
@@ -718,6 +906,30 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     for (const [k, html] of Object.entries(parts)) this._set(this._vdlg.querySelector(`[data-p="${k}"]`), html, `vd:${k}`);
     this._vdlg.querySelectorAll('[data-act="step"]').forEach((b) => { b.disabled = d.view.off; });
     this._vdlg.querySelector('.vd-target').classList.toggle('off', d.view.phase === 'window');
+  }
+
+  // The generic dialog (program now; settings and stats later): head + body patched only when a watched state changed.
+  _refreshGeneric(force = false, first = false) {
+    const def = DIALOGS[this._gd];
+    if (!def || !this._gdlg.open || !this._cfg || !this._hass) return;
+    if (this._pressed && !first) { this._dirty = true; return; } // a rebuilt button would swallow the press
+    const hass = this._hass;
+    const next = def.ids(hass, this._cfg).map((id) => hass.states?.[id]);
+    if (!force && this._gdSeen && this._gdSeen.length === next.length && next.every((x, i) => x === this._gdSeen[i])) return;
+    this._gdSeen = next;
+    if (!this._gdlg.firstElementChild) this._gdlg.innerHTML = gdShell;
+    const parts = def.parts(hass, this._cfg);
+    for (const [k, html] of Object.entries(parts)) this._set(this._gdlg.querySelector(`[data-p="${k}"]`), html, `gd:${k}`);
+  }
+
+  _openDialog(kind) {
+    if (!DIALOGS[kind]) return;
+    this._gd = kind;
+    this._gdSeen = null;
+    for (const k of Object.keys(this._last)) if (k.startsWith('gd:')) delete this._last[k];
+    this._gdlg.replaceChildren();
+    if (!this._gdlg.open) this._gdlg.showModal();
+    this._refreshGeneric(true, true);
   }
 
   _openValve(climate) {
@@ -766,6 +978,13 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     if (act === 'mode') this._call('input_select', 'select_option', { entity_id: eid(c, 'input_select', 'heating_mode'), option: b.dataset.val });
     else if (act === 'clear') this._call('input_text', 'set_value', { entity_id: eid(c, 'input_text', 'heating_status'), value: '' });
     else if (act === 'close') this._vdlg.close();
+    else if (act === 'gclose') this._gdlg.close();
+    else if (act === 'open') this._openDialog(b.dataset.val);
+    else if (act === 'program') {
+      if (programId(this._hass, c) !== b.dataset.val) this._call('select', 'select_option', { entity_id: eid(c, 'select', 'heating_program'), option: b.dataset.val });
+    } else if (act === 'alternation') this._call('input_boolean', 'toggle', { entity_id: eid(c, 'input_boolean', 'heating_week_alternation') });
+    else if (act === 'holidays') this._call('input_select', 'select_option', { entity_id: eid(c, 'input_select', 'heating_holidays'), option: b.dataset.val });
+    else if (act === 'programs') { this._gdlg.close(); this._openSchedule(c.valves[0]); }
     else if (act === 'history') { const id = this._vd; this._vdlg.close(); this._moreInfo(id); } // HA's dialog would sit under ours
     else if (act === 'schedule') { const id = this._vd; this._vdlg.close(); this._openSchedule(id); }
     else if (act === 'calibrate') {
