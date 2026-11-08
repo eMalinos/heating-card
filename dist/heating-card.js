@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -660,7 +660,9 @@ export const outdoorSources = (hass) => Object.keys(hass.states ?? {}).filter((i
 const decimals = (step) => (String(step).split('.')[1] ?? '').length;
 
 // A number field from an input_number: value / unit / min / max / step come from its state; null when it is missing or not a number.
-// `def` = {label, icon, help}; `pending` = {id: {v, at}}, a ± value sent but not yet reported (shown until hass reports it or PENDING_MS).
+// `def` = {label, icon, help, off, offHint}; `off(value)` true = the setting is switched off at that value (shown as Vypnuto,
+// dimmed); `offHint` is added to the help only when the helper's min reaches off (an older helper may stop at 0).
+// `pending` = {id: {v, at}}, a ± value sent but not yet reported (shown until hass reports it or PENDING_MS).
 export function numField(hass, id, def = {}, pending = {}, now = Date.now()) {
   const s = hass.states?.[id];
   const value = num(s?.state);
@@ -669,10 +671,13 @@ export function numField(hass, id, def = {}, pending = {}, now = Date.now()) {
   const step = num(a.step) ?? 1;
   const p = pending[id];
   const shown = p && now - p.at < PENDING_MS ? p.v : value;
+  const off = !!def.off?.(shown);
   const unit = a.unit_of_measurement ?? '';
+  const min = num(a.min) ?? 0;
+  const help = def.help ?? `Krok ${fmt(step, decimals(step))}${unit ? ` ${unit}` : ''}`;
   return {
-    id, label: def.label, icon: def.icon, value: shown, text: fmt(shown, decimals(step)), unit, min: num(a.min) ?? 0, max: num(a.max) ?? 100, step,
-    help: def.help ?? `Krok ${fmt(step, decimals(step))}${unit ? ` ${unit}` : ''}`,
+    id, label: def.label, icon: def.icon, value: shown, off, text: off ? T.phase.off : fmt(shown, decimals(step)), unit: off ? '' : unit, min, max: num(a.max) ?? 100, step,
+    help: def.offHint && def.off?.(min) ? `${help} ${def.offHint}` : help,
   };
 }
 
@@ -702,12 +707,12 @@ const isOpen = (w) => w.open === true || w.state === 'on';
 
 const SETTING_FIELDS = {
   threshold: ['input_number', 'heating_weather_threshold', { label: 'Topit pod venkovní teplotou', icon: ICON.thermoLow }],
-  fast: ['input_number', 'heating_fast_start_delta', { label: 'Rychlý start pod rozvrhem', icon: ICON.rocket, help: 'Hlavice otevře naplno, když je místnost o tolik pod cílem.' }],
+  fast: ['input_number', 'heating_fast_start_delta', { label: 'Rychlý start pod rozvrhem', icon: ICON.rocket, help: 'Hlavice otevře naplno, když je místnost o tolik pod cílem.', off: (v) => v < 0, offHint: 'Pod 0 = vypnuto.' }],
   bypass: ['input_number', 'heating_bypass_threshold', { label: 'Kotel topí pro hlavici otevřenou od', icon: ICON.valve, help: 'Menší otevření kotel nezapne (kromě rychlého startu).' }],
   margin: ['input_number', 'heating_close_margin', { label: 'Zavřít doběh nad rozvrhem', icon: ICON.thermoUp, help: 'Doběh skončí, když místnost přeteče o tolik nad cíl.' }],
-  overrun: ['input_number', 'heating_bypass_overrun', { label: 'Doběh čerpadla', icon: ICON.pump, help: 'Poslední otevřená hlavice drží vodu v oběhu, než kotel dojede.' }],
+  overrun: ['input_number', 'heating_bypass_overrun', { label: 'Doběh čerpadla', icon: ICON.pump, help: 'Poslední otevřená hlavice drží vodu v oběhu, než kotel dojede.', off: (v) => v <= 0 }],
   release: ['input_number', 'heating_release_check', { label: 'Kontrola po uvolnění hlavice', icon: ICON.timerSand, help: 'Pak se ověří, že hlavice opravdu zavřela.' }],
-  reminder: ['input_number', 'heating_window_reminder', { label: 'Připomenout otevřené okno po', icon: ICON.bellRing, help: '0 = nepřipomínat. Notifikace jde do kanálu okruhu.' }],
+  reminder: ['input_number', 'heating_window_reminder', { label: 'Připomenout otevřené okno po', icon: ICON.bellRing, help: '0 = nepřipomínat. Notifikace jde do kanálu okruhu.', off: (v) => v <= 0 }],
 };
 const SHARED_FIELDS = {
   battery: ['input_number.heating_low_battery_threshold', { label: 'Slabá baterie pod', icon: ICON.batteryLow, help: 'Hlavice a okenní čidla pod prahem blikají a přijde upozornění.' }],
@@ -811,7 +816,7 @@ export function settingsView(hass, cfg, tab = 'rule', ctx = {}, now = Date.now()
 }
 
 const stepBtn = (f, d) => `<button class="pm raised" data-act="num" data-id="${esc(f.id)}" data-d="${d}" data-k="n${d}:${esc(f.id)}" aria-label="${esc(f.label)}: ${d < 0 ? 'méně' : 'více'}">${stroke(d < 0 ? 'M6 12h12' : 'M6 12h12M12 6v12', 18, 2.2)}</button>`;
-const fieldHtml = (f) => `<div class="soft field"><span class="fi">${svg(f.icon, 18)}</span>
+const fieldHtml = (f) => `<div class="soft field${f.off ? ' is-off' : ''}"><span class="fi">${svg(f.icon, 18)}</span>
     <div class="fl"><div class="lbl">${esc(f.label)}</div><div class="fval">${esc(f.text)}${f.unit ? ` <span class="unit">${esc(f.unit)}</span>` : ''}</div><div class="help">${esc(f.help)}</div></div>
     ${stepBtn(f, -1)}${stepBtn(f, 1)}</div>`;
 const pickHtml = (f, control) => `<div class="soft field"><span class="fi">${svg(f.icon, 18)}</span>
@@ -1436,6 +1441,7 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .tabpanel { display: flex; flex-direction: column; gap: 14px; }
 .fields { display: flex; flex-direction: column; gap: 8px; } .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .field { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 8px 8px 8px; }
+.field.is-off .fi, .field.is-off .fl { opacity: .5; filter: grayscale(1); }
 .field.soft { background: var(--c-tile-bg); border: var(--c-tile-border); box-shadow: var(--c-tile-shadow); border-radius: var(--c-tile-radius); }
 .field .fl { flex: 1; min-width: 0; } .field .help { margin-top: 2px; }
 .fi { width: 32px; height: 32px; border-radius: 50%; background: var(--hfb-card, var(--card-background-color, #fff)); color: #607D8B; display: flex; align-items: center; justify-content: center; flex: none; align-self: flex-start; margin-top: 2px; }
