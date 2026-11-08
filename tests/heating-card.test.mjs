@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural } from '../dist/heating-card.js';
+import { clockText, settingsView, settingsHtml, numField, stepNum, outdoorSources, programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural } from '../dist/heating-card.js';
 
 const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/states.json', import.meta.url), 'utf8'));
 const C = 'circuit_demo';
@@ -285,7 +285,7 @@ test('valveDetail: V4-ValveWindow board (window open 12 min, reminder 30 -> 18)'
 test('valveDetail: reminder 0 or used up, unavailable sensor, no windows', () => {
   const open = [{ ...wins[0], state: 'on', open: true, since: '2026-11-08T11:48:00Z' }];
   const base = { [`sensor.heating_off_schedule_${C}`]: { attributes: { windows: { [K]: open }, window_open_climates: [K] } } };
-  assert.equal(detail(base).alert.text, ' · hlavice netopí, dokud se okno nezavře.');
+  assert.equal(detail({ ...base, [`input_number.heating_window_reminder_${C}`]: { state: 'unknown' } }).alert.text, ' · hlavice netopí, dokud se okno nezavře.'); // no reminder set
   assert.equal(detail({ ...base, [`input_number.heating_window_reminder_${C}`]: { state: '0' } }).alert.text, ' · hlavice netopí, dokud se okno nezavře.');
   assert.equal(detail({ ...base, [`input_number.heating_window_reminder_${C}`]: { state: '10' } }).alert.text, ' · hlavice netopí, dokud se okno nezavře.');
   const dead = detail(offs([{ ...wins[0], state: 'unavailable', open: false }, { ...wins[1], state: 'unknown', open: false }]));
@@ -446,4 +446,157 @@ test('programView: missing select is read-only, unknown holidays press nothing, 
   assert.doesNotMatch(programHtml(programView(noCal, CFG)), /data-act="calendar"/);
   // a pending program is shown as current
   assert.equal(programView(world(), CFG, Date.now(), undefined, 'vacation').programs.find((p) => p.current).id, 'vacation');
+});
+
+// ---- Settings dialog (#446) ----
+const sv = (tab, patch = {}, cfg = CFG, ctx = { sources: ['sensor.outdoor_temperature'] }, now = new Date(2026, 10, 8, 18, 40).getTime()) => settingsView(world(patch), cfg, tab, ctx, now);
+const flat = (html) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+test('normalizeConfig: condensing_boiler', () => {
+  assert.equal(normalizeConfig({ circuit: C, valves: [K] }).condensing_boiler, true);
+  assert.equal(normalizeConfig({ circuit: C, valves: [K], condensing_boiler: false }).condensing_boiler, false);
+  assert.equal(normalizeConfig({ circuit: C, valves: [K], condensing_boiler: 'no' }).condensing_boiler, true);
+});
+
+test('numField reads value, unit, min, max, step; a missing helper is absent', () => {
+  const f = numField(world(), `input_number.heating_weather_threshold_${C}`, { label: 'x', icon: 'p' });
+  assert.deepEqual([f.value, f.text, f.unit, f.min, f.max, f.step, f.help], [15, '15,0', '°C', 5, 25, 0.5, 'Krok 0,5 °C']);
+  assert.equal(numField(world(), 'input_number.nope'), null);
+  assert.equal(numField(world({ 'input_number.x': { state: 'unavailable' } }), 'input_number.x'), null);
+  // a pending value is shown while it is fresh, dropped after PENDING_MS
+  const id = `input_number.heating_weather_threshold_${C}`;
+  assert.equal(numField(world(), id, {}, { [id]: { v: 16, at: 1000 } }, 2000).value, 16);
+  assert.equal(numField(world(), id, {}, { [id]: { v: 16, at: 1000 } }, 7000).value, 15);
+});
+
+test('stepNum: step, clamp, no float noise', () => {
+  assert.equal(stepNum({ value: 15, step: 0.5, min: 5, max: 25 }, 1), 15.5);
+  assert.equal(stepNum({ value: 25, step: 0.5, min: 5, max: 25 }, 1), 25);
+  assert.equal(stepNum({ value: 5, step: 0.5, min: 5, max: 25 }, -1), 5);
+  assert.equal(stepNum({ value: 0.3, step: 0.1, min: 0, max: 2 }, 1), 0.4);
+  assert.equal(stepNum({ value: 10, step: 1, min: 1, max: 30 }, 1), 11);
+});
+
+test('settingsView: tabs, Kotel only with condensing_boiler, unknown tab = rule', () => {
+  assert.deepEqual(sv('rule').tabs.map((t) => t.id), ['rule', 'boiler', 'windows', 'other']);
+  const noBoiler = normalizeConfig({ circuit: C, valves: [K], condensing_boiler: false });
+  assert.deepEqual(sv('rule', {}, noBoiler).tabs.map((t) => t.id), ['rule', 'windows', 'other']);
+  assert.equal(sv('boiler', {}, noBoiler).tab, 'rule');
+  assert.equal(sv('nope').tab, 'rule');
+  assert.match(settingsHtml(sv('rule', {}, noBoiler)), /class="seg tabs "/);
+  assert.match(settingsHtml(sv('rule')), /class="seg tabs four"/);
+  assert.equal(sv('rule').title, 'Přízemí');
+});
+
+test('settings Pravidlo: weather rule, alert texts, source picker', () => {
+  const v = sv('rule');
+  assert.equal(v.rule, 'weather');
+  assert.deepEqual(v.fields.map((f) => [f.label, f.value]), [['Topit pod venkovní teplotou', 15]]);
+  assert.equal(v.alert.level, 'success');
+  assert.equal(v.alert.text, 'Venku -24,4 °C, pod 15 °C – kotel smí v režimu Počasí topit.');
+  assert.equal(v.source.value, 'sensor.outdoor_temperature');
+  assert.deepEqual(v.source.options, [{ id: 'sensor.outdoor_temperature', label: 'Venkovní teploměr · 6,2 °C' }]);
+  assert.equal(v.source.help, 'sensor.outdoor_temperature · společné pro všechny okruhy');
+  const off = sv('rule', { [`sensor.heating_weather_ok_${C}`]: { state: 'off' }, [`sensor.heating_outdoor_temperature_${C}`]: { state: '20' } });
+  assert.deepEqual(off.alert, { level: 'info', text: 'Venku 20,0 °C, nad 15 °C – v režimu Počasí kotel teď netopí.' });
+  assert.equal(sv('rule', { [`sensor.heating_weather_ok_${C}`]: { state: 'unavailable' } }).alert, null);
+  const html = settingsHtml(v);
+  assert.match(html, /<b>Počasí<\/b> topit/);
+  assert.match(html, /data-act="rule" data-val="weather"[^>]*aria-pressed="true"/);
+  assert.match(html, /<select class="pick fval t" data-act="pick" data-id="input_text.heating_outdoor_temperature_source"/);
+  assert.match(html, /data-act="num" data-id="input_number.heating_weather_threshold_circuit_demo" data-d="-1"/);
+  // a source that is not in the candidates is kept as the selected option; no helper = no picker
+  const odd = sv('rule', { 'input_text.heating_outdoor_temperature_source': { state: 'weather.home' }, 'weather.home': { state: 'sunny', attributes: { temperature: 3.5, friendly_name: 'Doma' } } });
+  assert.deepEqual(odd.source.options.map((o) => o.id), ['sensor.outdoor_temperature', 'weather.home']);
+  assert.equal(odd.source.options[1].label, 'Doma · 3,5 °C');
+  const none = world(); delete none.states['input_text.heating_outdoor_temperature_source'];
+  assert.equal(settingsView(none, CFG, 'rule', {}).source, null);
+});
+
+test('settings Pravidlo: time rule', () => {
+  const v = sv('rule', { [`input_select.heating_auto_rule_${C}`]: { state: 'time' }, [`input_datetime.heating_time_from_${C}`]: { state: '06:00:00' }, [`input_datetime.heating_time_to_${C}`]: { state: '22:00:00' } });
+  assert.equal(v.rule, 'time');
+  assert.deepEqual(v.times.map((t) => [t.label, t.value]), [['Topit od', '06:00'], ['Topit do', '22:00']]);
+  assert.equal(v.alert.text, 'Je 18:40, mezi 06:00 a 22:00 – kotel smí v režimu Počasí topit.');
+  const html = settingsHtml(v);
+  assert.match(html, /<input class="pick fval t" type="time" value="06:00" data-act="pick" data-id="input_datetime.heating_time_from_circuit_demo"/);
+  assert.doesNotMatch(html, /data-act="num"/);
+  const noTimes = world(); delete noTimes.states[`input_datetime.heating_time_to_${C}`];
+  assert.equal(settingsView(noTimes, CFG, 'rule', {}).times.length, 1);
+});
+
+test('settings Pravidlo: time rule off alert and the clock in the HA time zone', () => {
+  const t = { [`input_select.heating_auto_rule_${C}`]: { state: 'time' }, [`input_datetime.heating_time_from_${C}`]: { state: '06:00:00' }, [`input_datetime.heating_time_to_${C}`]: { state: '22:00:00' }, [`sensor.heating_weather_ok_${C}`]: { state: 'off' } };
+  const night = Date.UTC(2026, 10, 8, 22, 10); // 23:10 in Prague (CET)
+  const w = world(t); w.config = { time_zone: 'Europe/Prague' };
+  assert.equal(settingsView(w, CFG, 'rule', {}, night).alert.text, 'Je 23:10, mimo 06:00–22:00 – v režimu Počasí kotel teď netopí.');
+  assert.equal(clockText({ config: { time_zone: 'Asia/Tokyo' } }, Date.UTC(2026, 10, 8, 12, 0)), '21:00');
+  assert.equal(clockText({ config: { time_zone: 'Nope/Zone' } }, 0), clockText({}, 0)); // unknown zone: the browser's
+  assert.equal(clockText({ config: { time_zone: 'UTC' } }, Date.UTC(2026, 10, 8, 0, 5)), '00:05'); // h23, no 24:05
+});
+
+test('settings Kotel: fields in order, phase counts', () => {
+  const v = sv('boiler');
+  assert.deepEqual(v.fields.map((f) => f.label), ['Rychlý start pod rozvrhem', 'Kotel topí pro hlavici otevřenou od', 'Zavřít doběh nad rozvrhem', 'Doběh čerpadla', 'Kontrola po uvolnění hlavice']);
+  assert.deepEqual(v.fields.map((f) => [f.text, f.unit]), [['0,3', '°C'], ['30', '%'], ['0,5', '°C'], ['10', 'min'], ['10', 'min']]);
+  assert.equal(v.now, 'Hlavice teď: žádná netopí.');
+  const busy = sv('boiler', valves({ phases: { [K]: ['fast'], [B]: ['overrun'], [O]: ['normal'] }, demand: [K, O] }));
+  assert.equal(busy.now, 'Hlavice teď: 1 rychlý start, 1 topí, 1 doběh.');
+  // matches the tiles: a valve with an open window or a circuit that is off is in no phase
+  const win = sv('boiler', { ...valves({ phases: { [K]: ['fast'], [B]: ['normal'], [O]: ['normal'] }, demand: [K, B] }), [`sensor.heating_off_schedule_${C}`]: { attributes: { window_open_climates: [K] } } });
+  assert.equal(win.now, 'Hlavice teď: 1 topí.');
+  assert.equal(sv('boiler', { ...valves({ phases: { [K]: ['fast'] }, demand: [K] }), [`binary_sensor.heating_active_${C}`]: { state: 'off' } }).now, 'Hlavice teď: žádná netopí.');
+  const two = sv('boiler', valves({ phases: { [K]: ['normal'], [B]: ['normal'], [O]: ['run'] }, demand: [K, B] }));
+  assert.equal(two.now, 'Hlavice teď: 2 topí, 1 doběh.');
+  const html = settingsHtml(busy);
+  assert.match(html, /class="phase"/);
+  assert.equal((html.match(/data-act="num"/g) ?? []).length, 10);
+  // a missing helper hides its field
+  const poor = world(); delete poor.states[`input_number.heating_bypass_overrun_${C}`];
+  assert.equal(settingsView(poor, CFG, 'boiler', {}).fields.length, 4);
+});
+
+test('settings Okna: reminder and one row per valve', () => {
+  const win = (name, open) => ({ entity_id: `binary_sensor.${name}`, name: `Okno ${name}`, state: open ? 'on' : 'off', open });
+  const v = sv('windows', { [`sensor.heating_off_schedule_${C}`]: { attributes: { windows: { [K]: [win('terasa', false), win('jih', false)], [B]: [win('balkon', true)] } } } });
+  assert.equal(v.fields[0].label, 'Připomenout otevřené okno po');
+  assert.equal(v.fields[0].text, '15');
+  assert.deepEqual(v.rows.map((r) => [r.count, r.windows.map((w) => [w.text, w.open])]), [
+    [2, [['Okno terasa', false], ['Okno jih', false]]], [1, [['Okno balkon', true]]], [0, []]]);
+  const html = settingsHtml(v);
+  assert.match(html, /<span class="open">Okno balkon · otevřené<\/span>/);
+  assert.match(flat(html), /Okno terasa · Okno jih/);
+  assert.match(html, /bez okenního čidla/);
+  assert.match(html, /Okna k hlavicím přiřadíš v aplikaci Homecraft/);
+  assert.doesNotMatch(html, /data-act="pick"/); // read only apart from the reminder
+});
+
+test('settings Ostatní: shared fields, channel, tiles', () => {
+  const win = (n, open) => ({ entity_id: `binary_sensor.${n}`, name: `Okno ${n}`, state: open ? 'on' : 'off', open });
+  const now = new Date(2026, 10, 8, 18, 40).getTime();
+  const w = world({
+    [`sensor.heating_off_schedule_${C}`]: { attributes: { windows: { [K]: [win('a', true), win('b', false)], [B]: [win('c', false)] } } },
+    [`sensor.heating_low_batteries_${C}`]: { attributes: { low_battery: [{ climate: K, source: 'valve', state: 9 }, { climate: K, source: 'window', state: 8 }, { climate: O, source: 'valve', state: 5 }] } },
+    [`switch.boiler_${C}`]: { state: 'off' },
+  });
+  w.states[`switch.boiler_${C}`].last_changed = new Date(now - 12 * 60000).toISOString();
+  const v = settingsView(w, CFG, 'other', {}, now);
+  assert.deepEqual(v.fields.map((f) => [f.label, f.text, f.unit]), [['Slabá baterie pod', '30', '%'], ['Stavová zpráva svítí', '30', 's']]);
+  assert.equal(v.channel, C);
+  assert.deepEqual(v.tiles.map((t) => [t.label, t.value, t.caption]), [
+    ['Hlavice', '3', '2 se slabou baterií'], ['Okenní čidla', '3', '1 otevřené'], ['Kotel', `switch.boiler_${C}`, 'vypnuto · 12 min'], ['Venku', '-24,4 °C', 'čidlo okruhu']]);
+  const html = settingsHtml(v);
+  assert.match(html, /Kanál notifikací/);
+  assert.doesNotMatch(html.slice(html.indexOf('Kanál notifikací'), html.indexOf('Okruh')), /data-act/); // not clickable
+  assert.equal(v.tiles.length, 4);
+  // a sensor listed under two valves counts once
+  const dup = world({ [`sensor.heating_off_schedule_${C}`]: { attributes: { windows: { [K]: [win('a', true)], [B]: [win('a', true), win('b', false)] } } } });
+  const dv = settingsView(dup, CFG, 'other', {}, now);
+  assert.deepEqual([dv.tiles[1].value, dv.tiles[1].caption], ['2', '1 otevřené']);
+  assert.doesNotMatch(flat(html), /Verze/);
+});
+
+test('outdoorSources: temperature sensors and weather entities', () => {
+  const w = world({ 'weather.home': { state: 'sunny' }, 'sensor.humidity': { attributes: { device_class: 'humidity' } } });
+  assert.deepEqual(outdoorSources(w).sort(), ['sensor.heating_outdoor_temperature_circuit_demo', 'sensor.outdoor_temperature', 'weather.home']);
 });

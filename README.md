@@ -10,7 +10,7 @@ A Home Assistant card for one heating circuit, in the Homecraft look: a circuit 
 
 **HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/heating-card`, type **Dashboard** → download **Heating Card** → reload the browser.
 
-**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.0-beta.4`, type **JavaScript module**). Change `?v=` after copying a new version.
+**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.0-beta.5`, type **JavaScript module**). Change `?v=` after copying a new version.
 
 ## Configuration
 
@@ -25,13 +25,16 @@ valves:                            # the circuit's valves
 heading: Topení přízemí            # optional; default: binary_sensor.heating_state_<circuit> attribute title, else the id
 schedule_gesture: tap              # opens the schedule card for the valve
 info_gesture: icon_tap             # opens the valve dialog
+condensing_boiler: true            # false hides the Kotel tab of the settings dialog
 ```
+
+`condensing_boiler` (boolean, default `true`; anything but `false` counts as `true`) says whether the circuit has a condensing boiler; without one the settings dialog has no *Kotel* tab.
 
 Gestures are `tap`, `double_tap`, `hold`, `icon_tap`, `icon_double_tap`, `icon_hold` or `none` (the same values as the heating parameters); the two must differ unless both are `none`.
 
 Entities read (`<c>` is the circuit): `switch.boiler_<c>`, `input_select.heating_mode_<c>`, `input_select.heating_auto_rule_<c>`, `input_datetime.heating_time_from_<c>` / `_to_<c>`, `input_number.heating_weather_threshold_<c>`, `input_text.heating_status_<c>`, `sensor.heating_program_<c>`, `sensor.heating_applying_<c>`, `sensor.heating_schedule_<c>`, `input_boolean.heating_week_alternation_<c>`, `input_select.heating_holidays_<c>`, `input_text.heating_holiday_calendar_<c>`, every `calendar.*`, `select.heating_program_<c>`, `sensor.heating_off_schedule_<c>`, `sensor.heating_valves_<c>`, `sensor.heating_low_batteries_<c>`, `binary_sensor.heating_active_<c>`, `binary_sensor.heating_state_<c>`, `sensor.heating_outdoor_temperature_<c>` and each valve's `climate` entity.
 
-Actions: the mode segments call `input_select.select_option`, the cross on the status message clears `input_text.heating_status_<c>`, **Srovnat** presses `input_button.heating_sync_<c>`, − / + change a valve's target by 0.5 °C (not on a valve with an open window or while the circuit is off). The settings and statistics dialogs come later; `schedule_gesture` opens `heating-schedule-card` in a simple dialog.
+Actions: the mode segments call `input_select.select_option`, the cross on the status message clears `input_text.heating_status_<c>`, **Srovnat** presses `input_button.heating_sync_<c>`, − / + change a valve's target by 0.5 °C (not on a valve with an open window or while the circuit is off). The statistics dialog comes later; `schedule_gesture` opens `heating-schedule-card` in a simple dialog.
 
 ## Valve dialog
 
@@ -47,6 +50,19 @@ The **Program** button in box 1 opens the program dialog (a bottom sheet under 6
 
 ![Program dialog](docs/program-dialog.png)
 
+## Settings dialog
+
+The **Nastavení** button in box 1 opens the settings dialog (a bottom sheet under 600 px) with four tabs, each setting a soft panel with an icon circle, label, value and − / + (or a native picker). Changes apply immediately, there is no Save; quick taps on − / + add up until Home Assistant reports the value.
+
+- **Pravidlo**: what rules the *Počasí* mode. One alert says what the rule decides now (`sensor.heating_weather_ok_<c>`). *Venkovní teplota* = `input_number.heating_weather_threshold_<c>` plus a picker of the outdoor source (`input_text.heating_outdoor_temperature_source`, shared by all circuits; every `sensor.*` with device class temperature and every `weather.*`); *Čas* = two time pickers (`input_datetime.heating_time_from_<c>` / `_to_<c>`). The rule itself is `input_select.heating_auto_rule_<c>`.
+- **Kotel** (only with `condensing_boiler`): the phase strip (rychlý start, topí, doběh, kontrola) and `heating_fast_start_delta_<c>`, `heating_bypass_threshold_<c>`, `heating_close_margin_<c>`, `heating_bypass_overrun_<c>`, `heating_release_check_<c>`, plus how many valves are in which phase now (`sensor.heating_valves_<c>`).
+- **Okna**: `heating_window_reminder_<c>` and, read only, the window sensors of each valve (assigned in the Homecraft app).
+- **Ostatní**: `input_number.heating_low_battery_threshold` and `input_number.heating_status_duration` (shared), the notification channel (the circuit id, set in the app) and tiles for valves, window sensors, boiler relay and outdoor temperature.
+
+The min, max, step and unit of every number come from its `input_number`. A missing helper hides its field. An open select or time picker is not rebuilt by a hass update; the update lands when it closes.
+
+![Settings dialog: Pravidlo, Kotel, Okna, Ostatní](docs/settings-dialog.png)
+
 ## Look
 
 Colours, radii and shadows come from the `--hfb-*` tokens of the [Homecraft style](https://github.com/eMalinos/ha-features-builder/blob/main/docs/style-homecraft.md), each with a Home Assistant theme fallback, so the card follows any theme. The card surface honours `--ha-card-background`, `--ha-card-box-shadow` and `--ha-card-border-radius`. Flame flicker and the low-battery blink stop with the system's reduce-motion setting.
@@ -54,7 +70,7 @@ Colours, radii and shadows come from the `--hfb-*` tokens of the [Homecraft styl
 ## Tests
 
 ```sh
-node --test tests/*.test.mjs                      # pure logic: config, valveView, circuitView, valveDetail, chartModel
+node --test tests/*.test.mjs                      # pure logic: config, valveView, circuitView, valveDetail, chartModel, programView, settingsView
 python3 -m http.server 8766 &
 "Google Chrome" --headless=new --virtual-time-budget=30000 --dump-dom http://localhost:8766/tests/dom.html | grep RESULT   # prints RESULT OK
 ```
@@ -63,6 +79,7 @@ python3 -m http.server 8766 &
 
 ## Changelog
 
+- **0.1.0-beta.5** — settings dialog (box 1 *Nastavení* button): tabs Pravidlo / Kotel / Okna / Ostatní, immediate changes; new option `condensing_boiler` (default `true`; `false` hides the Kotel tab).
 - **0.1.0-beta.4** — program dialog (box 1 *Program* button): program list, applying progress, week alternation, holidays and calendar, *Srovnat hlavice* / *Upravit programy*; generic dialog frame for the settings and statistics dialogs.
 - **0.1.0-beta.3** — tiles, soft panels and window rows read `--hfb-tile-bg` / `-border` / `-shadow` / `-radius`, so they follow Bento's inner tile style.
 - **0.1.0-beta.2** — valve dialog (batteries, windows, 24 h chart, calibrate); `info_gesture` opens it instead of more-info.

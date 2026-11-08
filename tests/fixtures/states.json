@@ -17,10 +17,10 @@
   "state": "on"
  },
  "calendar.holidays_cz": {
-  "state": "off",
   "attributes": {
    "friendly_name": "Svátky ČR"
-  }
+  },
+  "state": "off"
  },
  "climate.bedroom_valve": {
   "attributes": {
@@ -74,11 +74,11 @@
   "state": "heat"
  },
  "input_boolean.heating_week_alternation_circuit_demo": {
-  "state": "on",
   "attributes": {
    "editable": true,
    "friendly_name": "Střídat týdny circuit_demo"
-  }
+  },
+  "state": "on"
  },
  "input_button.heating_sync_circuit_demo": {
   "attributes": {
@@ -113,6 +113,97 @@
   },
   "state": "00:00:00"
  },
+ "input_number.heating_bypass_overrun_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Doběh čerpadla",
+   "initial": null,
+   "max": 30.0,
+   "min": 1.0,
+   "mode": "box",
+   "step": 1.0,
+   "unit_of_measurement": "min"
+  },
+  "state": "10.0"
+ },
+ "input_number.heating_bypass_threshold_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Kotel topí pro hlavici otevřenou od",
+   "initial": null,
+   "max": 100.0,
+   "min": 5.0,
+   "mode": "box",
+   "step": 5.0,
+   "unit_of_measurement": "%"
+  },
+  "state": "30.0"
+ },
+ "input_number.heating_close_margin_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Zavřít doběh nad rozvrhem",
+   "initial": null,
+   "max": 3.0,
+   "min": 0.1,
+   "mode": "box",
+   "step": 0.1,
+   "unit_of_measurement": "°C"
+  },
+  "state": "0.5"
+ },
+ "input_number.heating_fast_start_delta_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Rychlý start pod rozvrhem",
+   "initial": null,
+   "max": 2.0,
+   "min": 0.1,
+   "mode": "box",
+   "step": 0.1,
+   "unit_of_measurement": "°C"
+  },
+  "state": "0.3"
+ },
+ "input_number.heating_low_battery_threshold": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Slabá baterie pod",
+   "initial": null,
+   "max": 50.0,
+   "min": 5.0,
+   "mode": "box",
+   "step": 1.0,
+   "unit_of_measurement": "%"
+  },
+  "state": "30.0"
+ },
+ "input_number.heating_release_check_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Kontrola po uvolnění hlavice",
+   "initial": null,
+   "max": 30.0,
+   "min": 1.0,
+   "mode": "box",
+   "step": 1.0,
+   "unit_of_measurement": "min"
+  },
+  "state": "10.0"
+ },
+ "input_number.heating_status_duration": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Stavová zpráva svítí",
+   "initial": null,
+   "max": 300.0,
+   "min": 5.0,
+   "mode": "box",
+   "step": 5.0,
+   "unit_of_measurement": "s"
+  },
+  "state": "30.0"
+ },
  "input_number.heating_weather_threshold_circuit_demo": {
   "attributes": {
    "editable": true,
@@ -123,6 +214,19 @@
    "mode": "box",
    "step": 0.5,
    "unit_of_measurement": "°C"
+  },
+  "state": "15.0"
+ },
+ "input_number.heating_window_reminder_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Připomenout otevřené okno",
+   "initial": null,
+   "max": 120.0,
+   "min": 0.0,
+   "mode": "box",
+   "step": 1.0,
+   "unit_of_measurement": "min"
   },
   "state": "15.0"
  },
@@ -161,13 +265,24 @@
   "state": "on"
  },
  "input_text.heating_holiday_calendar_circuit_demo": {
-  "state": "calendar.holidays_cz",
   "attributes": {
    "editable": true,
    "friendly_name": "Kalendář svátků circuit_demo",
    "max": 255,
    "min": 0
-  }
+  },
+  "state": "calendar.holidays_cz"
+ },
+ "input_text.heating_outdoor_temperature_source": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Venkovní teplota z",
+   "max": 255,
+   "min": 0,
+   "mode": "text",
+   "pattern": null
+  },
+  "state": "sensor.outdoor_temperature"
  },
  "input_text.heating_status_circuit_demo": {
   "attributes": {
@@ -249,18 +364,18 @@
   "state": "auto"
  },
  "sensor.heating_schedule_circuit_demo": {
-  "state": "ok",
   "attributes": {
    "friendly_name": "heating_schedule_circuit_demo",
-   "week": "odd",
-   "week_number": 45,
    "holidays_next": [
     {
      "date": "2026-11-17",
      "name": "Den boje za svobodu"
     }
-   ]
-  }
+   ],
+   "week": "odd",
+   "week_number": 45
+  },
+  "state": "ok"
  },
  "sensor.heating_valves_circuit_demo": {
   "attributes": {
@@ -297,6 +412,20 @@
    "summary": "všechny podle rozvrhu"
   },
   "state": "0"
+ },
+ "sensor.heating_weather_ok_circuit_demo": {
+  "attributes": {
+   "friendly_name": "heating_weather_ok_circuit_demo"
+  },
+  "state": "on"
+ },
+ "sensor.outdoor_temperature": {
+  "attributes": {
+   "device_class": "temperature",
+   "friendly_name": "Venkovní teploměr",
+   "unit_of_measurement": "°C"
+  },
+  "state": "6.2"
  },
  "switch.boiler_circuit_demo": {
   "attributes": {
