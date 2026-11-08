@@ -82,7 +82,7 @@
     const end = Date.now(), h = (n) => (end - n * 3600000) / 1000;
     return Object.fromEntries(msg.entity_ids.map((id) => [id, id.startsWith('climate.')
       ? [{ lu: h(24), a: { current_temperature: 19, temperature: 18 } }, { lu: h(10), a: { current_temperature: 20.5, temperature: 21 } }, { lu: h(1), a: { current_temperature: 19.6 } }]
-      : [{ lu: h(24), s: id === 'binary_sensor.kids_window' ? 'on' : 'off' }]]));
+      : (id === 'binary_sensor.kids_window' ? [{ lu: h(24), s: 'on' }] : [{ lu: h(24), s: 'off' }])]));
   };
   const confirms = [];
   window.confirm = (m) => { confirms.push(m); return true; };
@@ -246,11 +246,38 @@
   await press($$('.main')[5].querySelector('.dot')); await tick(100);
   r.vdWindowAlert = t('.vd-alert') === 'Okno dětský pokoj otevřené 12 min · hlavice netopí, dokud se okno nezavře. Připomenu za 18 min.' && vd.querySelector('.vd-alert').classList.contains('info');
   r.vdWindowDisabled = [...vd.querySelectorAll('[data-act="step"]')].every((b) => b.disabled) && t('.vd-target .lbl') === 'Cíl · platí po zavření okna';
+  const band = vd.querySelector('.vd-chart .band');
+  r.vdBandWidth = !!band && Math.abs(Number(band.getAttribute('width')) - 3.7) < 0.6 && Number(band.getAttribute('x')) > 430;
   r.vdBand = vd.querySelectorAll('.vd-chart .band').length === 1 && t('.vd-win .ws') === 'Otevřené · 12 min' && vd.querySelector('.vd-win .dot.winopen') && !vd.querySelector('.vd-win .chip');
   card.hass = { ...hass, states: { ...states, 'binary_sensor.kids_window': { state: 'unavailable', attributes: {} }, [`sensor.heating_off_schedule_${C}`]: { state: '2', attributes: { ...states[`sensor.heating_off_schedule_${C}`].attributes, window_open_climates: [], windows: { [ids.kids]: [{ entity_id: 'binary_sensor.kids_window', name: 'Okno dětský pokoj', state: 'unavailable', open: false, since, battery: null }] } } } } };
   await tick();
   r.vdUnavailable = t('.vd-win .ws') === 'Čidlo nedostupné' && !vd.querySelector('.vd-alert');
   card.hass = hass; vd.close(); await tick();
+  // pointer gate + stable nodes: a hass update while a pointer is down in the dialog waits; the stepper keeps its nodes
+  await press($$('.main')[7].querySelector('.dot')); await tick(100);
+  const plus = vd.querySelector('[data-d="1"]'), foot = vd.querySelector('[data-act="calibrate"]');
+  const batTxt = () => t('.vd-tile .fv');
+  ptr(plus, 'pointerdown');
+  card.hass = { ...hass, states: { ...states, 'sensor.dress_battery': { state: '55', attributes: { device_class: 'battery' } } } }; await tick();
+  r.vdGate = batTxt() === '14 %';
+  ptr(plus, 'pointerup'); await tick(50);
+  r.vdGateFlush = batTxt() === '55 %' && vd.querySelector('[data-d="1"]') === plus && vd.querySelector('[data-act="calibrate"]') === foot;
+  const sameHtml = vd.querySelector('.vd-facts').innerHTML;
+  card.hass = { ...hass, states: { ...states, 'sensor.dress_battery': { state: '55', attributes: { device_class: 'battery' } }, 'sensor.unrelated': { state: '2', attributes: {} } } }; await tick();
+  r.vdUnrelated = vd.querySelector('.vd-facts').innerHTML === sameHtml;
+  card.hass = hass; await tick();
+  // backdrop: padding is inside the sheet and does not close it; a click outside its box does
+  const rect = vd.getBoundingClientRect();
+  vd.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, clientX: rect.left + 3, clientY: rect.top + 3 }));
+  r.vdPaddingStays = vd.open;
+  vd.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, clientX: rect.left - 10, clientY: rect.top + 50 }));
+  r.vdBackdropCloses = !vd.open;
+  // disconnect closes the dialog and stops its timers
+  await press($$('.main')[7].querySelector('.dot')); await tick(100);
+  const host = card.parentNode; host.removeChild(card); await tick();
+  r.vdDisconnect = !vd.open;
+  host.appendChild(card); await tick(50);
+  r.vdReconnect = !vd.open && $$('.tile').length === 8;
   // the close button
   await press($$('.main')[0].querySelector('.dot')); await tick(100);
   vd.querySelector('[data-act="close"]').click(); await tick();

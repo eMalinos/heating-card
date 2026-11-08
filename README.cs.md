@@ -10,7 +10,7 @@ Karta pro Home Assistant, která zobrazuje jeden topný okruh v stylu Homecraft:
 
 **HACS (vlastní repozitář):** HACS → ⋮ → Vlastní repozitáře → `https://github.com/eMalinos/heating-card`, typ **Dashboard** → stáhnout **Heating Card** → obnovit prohlížeč.
 
-**Ručně:** zkopíruj [`dist/heating-card.js`](dist/heating-card.js) do `config/www/` a přidej ho jako zdroj dashboardu (Nastavení → Dashboardy → ⋮ → Zdroje → URL `/local/heating-card.js?v=0.1.0`, typ **JavaScript module**). Po zkopírování nové verze změň `?v=`.
+**Ručně:** zkopíruj [`dist/heating-card.js`](dist/heating-card.js) do `config/www/` a přidej ho jako zdroj dashboardu (Nastavení → Dashboardy → ⋮ → Zdroje → URL `/local/heating-card.js?v=0.1.0-beta.2`, typ **JavaScript module**). Po zkopírování nové verze změň `?v=`.
 
 ## Konfigurace
 

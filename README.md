@@ -10,7 +10,7 @@ A Home Assistant card for one heating circuit, in the Homecraft look: a circuit 
 
 **HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/heating-card`, type **Dashboard** → download **Heating Card** → reload the browser.
 
-**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.0`, type **JavaScript module**). Change `?v=` after copying a new version.
+**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.0-beta.2`, type **JavaScript module**). Change `?v=` after copying a new version.
 
 ## Configuration
 
@@ -54,6 +54,11 @@ python3 -m http.server 8766 &
 ```
 
 `tests/dom.html` renders the card with a fake `hass` built from `tests/fixtures/states.json` (real entity shapes from the dev HA, `circuit_demo`). Looks: `?theme=homecraft`, `?theme=dark`, none (HA fallbacks); add `&shot=1` for a screenshot and `&vd=dress` / `&vd=kids` to open the valve dialog (battery / open-window board).
+
+## Changelog
+
+- **0.1.0-beta.2** — valve dialog (batteries, windows, 24 h chart, calibrate); `info_gesture` opens it instead of more-info.
+- **0.1.0** — circuit and valves boxes.
 
 ## License
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, fmt, plural } from '../dist/heating-card.js';
+import { normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural } from '../dist/heating-card.js';
 
 const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/states.json', import.meta.url), 'utf8'));
 const C = 'circuit_demo';
@@ -305,7 +305,7 @@ test('chartModel: lines, window bands, hour labels', () => {
   const end = Date.parse('2026-11-08T12:00:00');
   const h = (n) => (end - n * 3600000) / 1000;
   const m = chartModel([{ lu: h(24), a: { current_temperature: 19, temperature: 18 } }, { lu: h(12), a: { current_temperature: 21 } }, { lu: h(0), a: { temperature: 21 } }],
-    [[{ lu: h(6), s: 'on' }, { lu: h(3), s: 'off' }], [{ lu: h(4), s: 'on' }, { lu: h(2), s: 'off' }]], end);
+    [{ rows: [{ lu: h(6), s: 'on' }, { lu: h(3), s: 'off' }] }, { rows: [{ lu: h(4), s: 'on' }, { lu: h(2), s: 'off' }] }], end);
   assert.match(m.current, /^M0 .* L440 \d+(\.\d)?$/);
   assert.match(m.target, / H440$/);
   assert.equal(m.bands.length, 1); // 6 h..3 h and 4 h..2 h overlap -> one band 6 h..2 h
@@ -313,4 +313,30 @@ test('chartModel: lines, window bands, hour labels', () => {
   assert.equal(m.bands[0].w, Math.round((4 / 24) * 4400) / 10);
   assert.deepEqual(m.labels.map((l) => l.text), ['12:00', '18:00', '0:00', '6:00', '12:00']);
   assert.equal(chartModel([], [], end), null);
+  // an open window starts at its `since`, not at the chart start: history says "on" from the start state, since = 12 min ago
+  const rows = [{ lu: h(24), a: { current_temperature: 19 } }];
+  const open12 = chartModel(rows, [{ rows: [{ lu: h(24), s: 'on' }], since: end - 12 * 60000 }], end);
+  assert.deepEqual(open12.bands, [{ x: 436.3, w: 3.7 }]);
+  // no history rows at all: from `since`; since before the chart start is clamped to it
+  assert.deepEqual(chartModel(rows, [{ rows: [], since: end - 12 * 60000 }], end).bands, [{ x: 436.3, w: 3.7 }]);
+  assert.deepEqual(chartModel(rows, [{ rows: [], since: end - 48 * 3600000 }], end).bands, [{ x: 0, w: 440 }]);
+  // an opening in the history wins when it is later than nothing else says
+  assert.equal(chartModel(rows, [{ rows: [{ lu: h(24), s: 'off' }, { lu: h(12), s: 'on' }], since: end - 12 * 3600000 }], end).bands[0].x, 220);
+});
+
+test('valveDetail: unparsable since, battery names, unknown circuit state', () => {
+  const bad = [{ ...wins[0], state: 'on', open: true, since: 'garbage' }];
+  const base = { [`sensor.heating_off_schedule_${C}`]: { attributes: { windows: { [K]: bad }, window_open_climates: [K] } }, [`input_number.heating_window_reminder_${C}`]: { state: '30' } };
+  const d = detail(base);
+  assert.equal(d.alert.title, 'Okno balkon otevřené');
+  assert.equal(d.alert.text, ' · hlavice netopí, dokud se okno nezavře.');
+  assert.equal(d.windows[0].state, 'Otevřené');
+  assert.equal(batteryText({ source: 'window', state: 8 }), 'okno 8 %');
+  assert.equal(batteryText({ source: 'window', entity_id: 'binary_sensor.balkon', state: 8 }), 'okno balkon 8 %');
+  assert.equal(batteryText({ source: 'window', name: 'Okno kuchyň', state: 8 }), 'okno kuchyň 8 %');
+  assert.equal(batteryText({ source: 'valve', name: 'Šatna', state: 14 }), 'hlavice 14 %');
+  const unknown = detail({ [`binary_sensor.heating_active_${C}`]: { state: 'unavailable' } });
+  assert.equal(unknown.view.word, 'Stav neznámý');
+  assert.match(detailHtml(unknown), /Teplota teď · stav neznámý/);
+  assert.equal((detailHtml(unknown).match(/data-act="step"[^>]* disabled/g) || []).length, 2);
 });
