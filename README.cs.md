@@ -10,7 +10,7 @@ Karta pro Home Assistant, která zobrazuje jeden topný okruh v stylu Homecraft:
 
 **HACS (vlastní repozitář):** HACS → ⋮ → Vlastní repozitáře → `https://github.com/eMalinos/heating-card`, typ **Dashboard** → stáhnout **Heating Card** → obnovit prohlížeč.
 
-**Ručně:** zkopíruj [`dist/heating-card.js`](dist/heating-card.js) do `config/www/` a přidej ho jako zdroj dashboardu (Nastavení → Dashboardy → ⋮ → Zdroje → URL `/local/heating-card.js?v=0.1.0-beta.5`, typ **JavaScript module**). Po zkopírování nové verze změň `?v=`.
+**Ručně:** zkopíruj [`dist/heating-card.js`](dist/heating-card.js) do `config/www/` a přidej ho jako zdroj dashboardu (Nastavení → Dashboardy → ⋮ → Zdroje → URL `/local/heating-card.js?v=0.1.0-beta.6`, typ **JavaScript module**). Po zkopírování nové verze změň `?v=`.
 
 ## Konfigurace
 
@@ -54,6 +54,28 @@ Tlačítko **Nastavení** v prvním boxu otevře dialog nastavení (pod 600 px j
 Min, max, krok a jednotka každého čísla se berou z jeho `input_number`. Chybějící helper skryje své pole. Otevřený výběr ani výběr času aktualizace hass nepřestaví; změna se projeví po jeho zavření.
 
 ![Dialog nastavení: Pravidlo, Kotel, Okna, Ostatní](docs/settings-dialog.png)
+
+## Dialog statistik
+
+Tmavé tlačítko **Statistiky** v prvním boxu otevře dialog statistik (pod 600 px jako spodní list) se dvěma metrikami:
+
+- **Kotel**: jak dlouho kotel běžel proti stejnému úseku srovnávaného období. Velké číslo v hodinách, chipy změny (`▲ +15 % (+0,8 h)`), dvojice sloupců (minuty za hodinu u dne, hodiny za den / měsíc u týdne / měsíce / roku) a venkovní teplota jako čára na pravé ose, dlaždice *Ø venku*, *Denostupně*, *Na denostupeň* a *Okna ušetřila*. Přepínač **Přepočítat na venkovní teplotu** (výchozí zapnuto, drží se po dobu života karty) přidá druhý chip a větu, která srovnává čas kotle na denostupeň.
+- **Okna**: hodiny kotle ušetřené otevřenými okny (velké číslo), hlavice-hodiny, které okna držela zavřené (sloupce, dlaždice), a podíl na běhu kotle.
+
+Období **Den / Týden / Měsíc / Rok** se šipkami ◀ ▶ (▶ je na aktuálním období vypnutá; týden začíná v pondělí), vždy jeden chip srovnání: den = *včera* / stejný den minulého měsíce / stejné datum loni, týden = *minulý týden* / stejný ISO týden loni, měsíc = minulý měsíc / stejný měsíc loni, rok = loni. Srovnání je stejný úsek: srovnávané období se ořízne tam, kam sahají aktuální data (celé uplynulé období se srovnává celé).
+
+Čte jen dlouhodobé statistiky přes `recorder/statistics_during_period` (smí ho volat každý uživatel), jedno volání pro aktuální rozsah a jedno pro srovnání, dokud je dialog otevřený, se drží v paměti (aktuální období se obnovuje po 5 minutách):
+
+| Statistika | K čemu |
+|---|---|
+| `sensor.heating_stats_boiler_total_<okruh>` (`change`, hodiny) | doba běhu kotle |
+| `sensor.heating_stats_window_boiler_total_<okruh>` (`change`, hodiny) | hodiny kotle ušetřené okny |
+| `sensor.heating_stats_window_valves_total_<okruh>` (`change`, hodiny) | hlavice-hodiny držené okny zavřené |
+| `sensor.heating_outdoor_temperature_<okruh>` (`mean`, °C) | venkovní průměr a denostupně |
+
+Řádky statistik jsou hodinové pro den a týden, denní pro měsíc, měsíční pro rok. **Denostupně** = Σ max(0, 18 °C − průměrná venkovní teplota) × délka řádku ve dnech (řádek teplejší než 18 °C = 0), čas kotle na denostupeň je tedy `h / denostupně`. Selhané volání ukáže *Statistiky nejsou k dispozici.*, nová instalace bez statistik řádek o prázdných datech.
+
+![Dialog statistik: Kotel, Okna](docs/stats-dialog.png)
 
 ## Vzhled
 
