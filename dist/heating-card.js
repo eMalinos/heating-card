@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.3';
+const VERSION = '0.1.4';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -268,7 +268,7 @@ export const signalWord = (dbm) => (dbm >= -70 ? 'Silný' : dbm >= -85 ? 'OK' : 
 
 // Chart geometry over `hours` ending at `end` (24 h = CHART.w wide). rows = history/history_during_period rows of the climate ({a: attributes, lu: epoch s}),
 // winRows = rows of every window sensor ({s: state, lu}), phaseRows = rows of sensor.heating_valves_<circuit> ({a: {phases}, lu}).
-// Returns SVG path data, open-window / fast-start / overrun spans in x units and the y-axis ticks, or null without data.
+// Returns SVG path data, open-window / fast-start spans in x units and the y-axis ticks, or null without data.
 export const CHART = { w: 440, top: 10, bottom: 114 };
 const CHART_BACK_MS = 24 * 3600000; // the window's length
 const CHART_MAX_BACK_MS = 7 * 24 * 3600000; // how far back it can be dragged (its start)
@@ -333,7 +333,7 @@ export function chartModel(rows, wins, end, hours = 24, phaseRows = [], climate 
   for (let n = Math.ceil(yLo / step) * step; n <= yHi; n += step) ticks.push({ y: y(n), text: `${n}°` });
   return {
     start, end, w: W, current: line('cur', false), target: line('tgt', true), bands: merged.map(band), labels, ticks,
-    fast: phaseBands(['fast']), run: phaseBands(['run', 'overrun']),
+    fast: phaseBands(['fast']),
   };
 }
 
@@ -364,8 +364,16 @@ export function nextTarget(v, pending, dir, now = Date.now()) {
 }
 
 // The valve dialog's target control (input_select.heating_target_control_<c>): buttons = − / + only (default),
-// arc / ruler / track = a slider under the − / + row (design v8).
+// arc / ruler / track = a slider under the target row instead of its − / + (design v8).
 export const CONTROLS = [['buttons', 'Tlačítka'], ['arc', 'Oblouk'], ['ruler', 'Pravítko'], ['track', 'Dráha']];
+// 48×24 pictures of the controls for the settings' picker (lines in currentColor, the value part in the accent)
+const CONTROL_PIC = {
+  buttons: '<rect x="2" y="6" width="12" height="12" rx="4" class="cp-b"/><path d="M5.5 12h5" class="cp-l"/><text x="24" y="16.5" text-anchor="middle" class="cp-t">21</text><rect x="34" y="6" width="12" height="12" rx="4" class="cp-b"/><path d="M37.5 12h5M40 9.5v5" class="cp-l"/>',
+  arc: '<path d="M15 21a11 11 0 1 1 18 0" class="cp-trk"/><path d="M15 21a11 11 0 0 1 9-17.6" class="cp-on"/><circle cx="24" cy="3.4" r="2.6" class="cp-k"/>',
+  ruler: '<path d="M6 8v8M12 10v6M18 8v8M24 10v6M30 8v8M36 10v6M42 8v8" class="cp-l"/><path d="M24 3v18" class="cp-on"/>',
+  track: '<rect x="3" y="9" width="42" height="6" rx="3" class="cp-trk-f"/><rect x="3" y="9" width="27" height="6" rx="3" class="cp-on-f"/><circle cx="30" cy="12" r="4.5" class="cp-k"/>',
+};
+export const controlPic = (id) => `<svg class="cpic" width="48" height="24" viewBox="0 0 48 24" fill="none" aria-hidden="true">${CONTROL_PIC[id] ?? ''}</svg>`;
 export const targetControl = (hass, cfg) => {
   const k = st(hass, eid(cfg, 'input_select', 'heating_target_control'));
   return CONTROLS.some(([id]) => id === k) ? k : 'buttons';
@@ -492,8 +500,7 @@ function chartHtml(m) {
   const font = 'font-size="11" style="fill: var(--c-text2)"';
   const W = m.w ?? CHART.w, view = m.view ?? { start: m.start, end: m.end };
   const strip = (bs, cls) => bs.map((b) => `<rect class="${cls}" x="${b.x}" y="${CHART.bottom - 6}" width="${b.w}" height="6" rx="2"></rect>`).join('');
-  const legend = [m.bands.length && '<span><i class="lg win"></i>okno</span>', m.fast.length && '<span><i class="lg fast"></i>rychlý start</span>',
-    m.run.length && '<span><i class="lg run"></i>doběh</span>'].filter(Boolean).join('');
+  const legend = [m.bands.length && '<span><i class="lg win"></i>okno</span>', m.fast.length && '<span><i class="lg fast"></i>rychlý start</span>'].filter(Boolean).join('');
   const at = (t) => { const d = new Date(t); return `${d.getDate()}. ${d.getMonth() + 1}. ${d.getHours()}:00`; };
   const nav = `<div class="ch-nav"><span>${m.live ? 'Posledních 24 h' : `${at(view.start)} – ${at(view.end)}`}</span>
     <button class="x" data-act="chartNav" data-d="-1" data-k="chart:-1" aria-label="O 6 hodin zpět"${m.oldest ? ' disabled' : ''}>${stroke('M15 6l-6 6 6 6', 16)}</button>
@@ -506,7 +513,7 @@ function chartHtml(m) {
   ${m.ticks.map((t) => `<line x1="0" y1="${t.y}" x2="${W}" y2="${t.y}" class="grid-l"></line>`).join('')}
   ${m.bands.map((b) => `<rect class="band" x="${b.x}" y="${CHART.top}" width="${b.w}" height="${CHART.bottom - CHART.top}" rx="4"></rect>`).join('')}
   <line x1="0" y1="${CHART.bottom}" x2="${W}" y2="${CHART.bottom}" style="stroke: var(--c-border)"></line>
-  ${strip(m.fast, 'ph-fast')}${strip(m.run, 'ph-run')}
+  ${strip(m.fast, 'ph-fast')}
   ${m.target ? `<path d="${m.target}" fill="none" style="stroke: var(--disabled-text-color, #a9afb7)" stroke-width="2" stroke-dasharray="4 4"></path>` : ''}
   <path d="${m.current}" fill="none" stroke="#E8592C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
   ${m.labels.map((l) => `<text x="${Math.min(l.x, W - 28)}" y="132" ${font}>${l.text}</text>`).join('')}
@@ -834,10 +841,10 @@ const isOpen = (w) => w.open === true || w.state === 'on';
 const SETTING_FIELDS = {
   threshold: ['input_number', 'heating_weather_threshold', { label: 'Topit pod venkovní teplotou', icon: ICON.thermoLow }],
   fast: ['input_number', 'heating_fast_start_delta', { label: 'Rychlý start pod rozvrhem', icon: ICON.rocket, help: 'Hlavice otevře naplno, když je místnost o tolik pod cílem.', off: (v) => v < 0, offHint: 'Pod 0 = vypnuto.' }],
-  bypass: ['input_number', 'heating_bypass_threshold', { label: 'Kotel topí pro hlavici otevřenou od', icon: ICON.valve, help: 'Menší otevření kotel nezapne (kromě rychlého startu).' }],
-  margin: ['input_number', 'heating_close_margin', { label: 'Zavřít doběh nad rozvrhem', icon: ICON.thermoUp, help: 'Doběh skončí, když místnost přeteče o tolik nad cíl.' }],
-  overrun: ['input_number', 'heating_bypass_overrun', { label: 'Doběh čerpadla', icon: ICON.pump, help: 'Poslední otevřená hlavice drží vodu v oběhu, než kotel dojede.', off: (v) => v <= 0 }],
-  release: ['input_number', 'heating_release_check', { label: 'Kontrola po uvolnění hlavice', icon: ICON.timerSand, help: 'Pak se ověří, že hlavice opravdu zavřela.' }],
+  bypass: ['input_number', 'heating_bypass_threshold', { label: 'Kotel topí pro hlavici otevřenou od', icon: ICON.valve, help: 'Menší otevření kotel nezapne (kromě rychlého startu).', off: (v) => v <= 0, offHint: '0 = vypnuto (kotel topí pro každou hlavici, bez rychlého startu a doběhu hlavice).' }],
+  margin: ['input_number', 'heating_close_margin', { label: 'Zavřít doběh nad rozvrhem', icon: ICON.thermoUp, help: 'Doběh skončí, když místnost přeteče o tolik nad cíl.', off: (v) => v < 0, offHint: 'Pod 0 = vypnuto (doběh skončí až po 15 min).' }],
+  overrun: ['input_number', 'heating_bypass_overrun', { label: 'Doběh čerpadla', icon: ICON.pump, help: 'Poslední otevřená hlavice drží vodu v oběhu, než kotel dojede.', off: (v) => v <= 0, offHint: '0 = vypnuto.' }],
+  release: ['input_number', 'heating_release_check', { label: 'Kontrola po uvolnění hlavice', icon: ICON.timerSand, help: 'Pak se ověří, že hlavice opravdu zavřela.', off: (v) => v <= 0, offHint: '0 = vypnuto.' }],
   step: ['input_number', 'heating_target_step', { label: 'Krok cíle hlavice', icon: ICON.tune, help: 'O kolik změní cíl jedno − / + u hlavice.' }],
   reminder: ['input_number', 'heating_window_reminder', { label: 'Připomenout otevřené okno po', icon: ICON.bellRing, help: '0 = nepřipomínat. Notifikace jde do kanálu okruhu.', off: (v) => v <= 0 }],
 };
@@ -926,7 +933,7 @@ const SETTINGS_TAB = {
       tiles: [
         { icon: ICON.radiator, label: 'Hlavice', value: String(cfg.valves.length), caption: low ? `${low} se slabou baterií` : 'žádná se slabou baterií' },
         { icon: WINDOW_CLOSED, label: 'Okenní čidla', value: String(all.length), caption: openWins ? `${openWins} otevřené` : 'žádné otevřené' },
-        { icon: ICON.relay, label: 'Kotel', value: e('switch', 'boiler'), small: true, caption: `${bs}${mins == null ? '' : ` · ${mins} min`}` },
+        { icon: ICON.relay, label: 'Kotel', value: boiler?.attributes?.friendly_name || e('switch', 'boiler'), small: true, caption: `${bs}${mins == null ? '' : ` · ${mins} min`}` },
         { icon: ICON.thermometer, label: 'Venku', value: out == null ? '—' : `${fmt(out, 1)} °C`, caption: 'čidlo okruhu' },
       ],
     };
@@ -967,9 +974,14 @@ const SETTINGS_BODY = {
     : `<div class="pair">${v.times.map(timeHtml).join('')}</div>`}
   <div class="help">Pravidlo platí jen v režimu <b>Počasí</b>. V režimu Zapnuto kotel topí podle hlavic vždy, ve Vypnuto nikdy. Změny platí hned.</div>`,
 
-  boiler: (v) => { const fastOff = v.fields.some((f) => f.off && f.id.includes('heating_fast_start_delta')); return `<div class="vd-h">Fáze hlavice u kondenzačního kotle</div>
-  <figure class="phase" aria-label="Fáze hlavice: rychlý start${fastOff ? ' (vypnutý)' : ''}, topí, doběh, kontrola">
-    <div class="ph"><div class="p-fast${fastOff ? ' is-off' : ''}">Rychlý start</div><div class="p-heat">Topí</div><div class="p-run">Doběh</div><div class="p-chk">Kontrola</div></div>
+  boiler: (v) => {
+    // a switched-off setting dims its phases: threshold 0 turns off fast start and the run, release check 0 the check
+    const off = (n) => v.fields.some((f) => f.off && f.id.includes(n)), noPhases = off('heating_bypass_threshold');
+    const fastOff = noPhases || off('heating_fast_start_delta'), runOff = noPhases, chkOff = off('heating_release_check');
+    const lbl = (name, o) => `${name}${o ? ' (vypnutý)' : ''}`;
+    return `<div class="vd-h">Fáze hlavice u kondenzačního kotle</div>
+  <figure class="phase" aria-label="Fáze hlavice: ${lbl('rychlý start', fastOff)}, topí, ${lbl('doběh', runOff)}, ${lbl('kontrola', chkOff)}">
+    <div class="ph"><div class="p-fast${fastOff ? ' is-off' : ''}">Rychlý start</div><div class="p-heat">Topí</div><div class="p-run${runOff ? ' is-off' : ''}">Doběh</div><div class="p-chk${chkOff ? ' is-off' : ''}">Kontrola</div></div>
     <div class="cap"><span>pod rozvrhem</span><span>rozvrh dosažen</span><span>hlavice zavřená</span></div>
   </figure>
   ${fieldList(v.fields)}
@@ -992,7 +1004,7 @@ const SETTINGS_BODY = {
   <div class="vd-h">Okruh</div>
   ${v.control ? `<div class="lbl ctl-h">Ovladač cíle v detailu hlavice</div>
   <div class="seg four" role="group" aria-label="Ovladač cíle">${CONTROLS.map(([id, label]) =>
-    `<button data-act="control" data-val="${id}" data-k="control:${id}" aria-pressed="${v.control === id}"${v.control === id ? ' class="on"' : ''}>${label}</button>`).join('')}</div>` : ''}
+    `<button data-act="control" data-val="${id}" data-k="control:${id}" aria-pressed="${v.control === id}" class="cbtn${v.control === id ? ' on' : ''}">${controlPic(id)}<span>${label}</span></button>`).join('')}</div>` : ''}
   ${v.circuitFields.length ? fieldList(v.circuitFields) : ''}
   <div class="vd-facts">${v.tiles.map((t) => `<div class="vd-tile"><div class="lbl"><span class="li">${svg(t.icon, 14)}</span>${esc(t.label)}</div><div class="fv${t.small ? ' s' : ''}">${esc(t.value)}</div><div class="cap">${esc(t.caption)}</div></div>`).join('')}</div>`,
 };
@@ -1483,7 +1495,7 @@ button.dot { border: 0; padding: 0; cursor: pointer; font: inherit; }
 .seg button { height: 34px; border: 0; border-radius: 9px; background: transparent; font-size: 13px; font-weight: 500; color: var(--c-text2); display: flex; align-items: center; justify-content: center; gap: 6px; }
 .seg button.on { background: var(--hfb-seg-on, var(--card-background-color, #fff)); color: var(--hfb-seg-on-color, var(--primary-text-color, #1c2128)); font-weight: 600; box-shadow: var(--hfb-seg-on-shadow, none); }
 .soft { background: var(--c-fill); border-radius: 14px; }
-.panel.soft, .vd-target.soft, .fld.soft { background: var(--c-tile-bg); border: var(--c-tile-border); box-shadow: var(--c-tile-shadow); border-radius: var(--c-tile-radius); }
+.panel.soft, .vd-target.soft, .fld.soft, .ctl.soft { background: var(--c-tile-bg); border: var(--c-tile-border); box-shadow: var(--c-tile-shadow); border-radius: var(--c-tile-radius); }
 .panel { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 14px; }
 .facts { flex: 1; min-width: 0; display: flex; gap: 20px; }
 .lbl { font-size: 11px; color: var(--c-text2); }
@@ -1533,7 +1545,7 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .vd-now .chip { background: var(--c-fill); margin-bottom: 8px; }
 .chip.low { background: color-mix(in srgb, var(--c-err) var(--hfb-alert-tint, 12%), transparent); color: var(--c-err); }
 .vd-target { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; } .vd-target > .tvw { flex: 1; }
-.vd-target.off > .tvw { opacity: .6; }
+.vd-target.off > .tvw { opacity: .6; } .vd-target.slider > .pm { display: none; }
 .ctl[hidden] { display: none; }
 .vd-tile.warn .fv { color: var(--warning-color, #B45309); }
 .ctl { flex: none; position: relative; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; outline-offset: 2px; }
@@ -1572,9 +1584,9 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .ch-nav { display: flex; align-items: center; gap: 2px; font-size: 12px; color: var(--c-text2); margin-bottom: 2px; } .ch-nav > span { flex: 1; }
 .ch-nav .x { width: 32px; height: 32px; } .ch-nav .x:disabled { opacity: .3; cursor: default; } .ch-nav .sb { height: 28px; margin-left: 4px; }
 .band { fill: color-mix(in srgb, var(--info-color, #0a84ff) var(--hfb-alert-tint, 12%), transparent); }
-.grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; } .ph-fast { fill: #E8592C; } .ph-run { fill: #26A69A; }
+.grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; } .ph-fast { fill: #E8592C; }
 .legend { display: flex; gap: 12px; font-size: 11px; color: var(--c-text2); margin-top: 4px; } .legend span { display: inline-flex; align-items: center; gap: 4px; }
-.lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; } .lg.win { background: color-mix(in srgb, var(--info-color, #0a84ff) 30%, transparent); } .lg.fast { background: #E8592C; } .lg.run { background: #26A69A; }
+.lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; } .lg.win { background: color-mix(in srgb, var(--info-color, #0a84ff) 30%, transparent); } .lg.fast { background: #E8592C; }
 .chart-msg { font-size: 12px; color: var(--c-text2); padding: 40px 0; text-align: center; }
 .vd-h { font-size: 13px; font-weight: 600; margin-bottom: -6px; }
 .vd-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -1606,7 +1618,13 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .sel { max-width: 100%; margin-top: 2px; border: 0; border-radius: 10px; padding: 6px 8px; background: var(--c-card); color: var(--c-text); font: inherit; font-size: 14px; font-weight: 600; }
 .vd-tile .cap { font-size: 12px; color: var(--c-text2); margin-top: 2px; }
 /* settings dialog (V7-Settings*): every setting is a soft panel with an icon circle, label, value and − / + (or a native picker) */
-.seg.four { grid-template-columns: repeat(4, minmax(0, 1fr)); } .seg.tabs button { padding: 0 4px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.seg.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.seg button.cbtn { height: auto; flex-direction: column; gap: 4px; padding: 8px 2px 6px; }
+.cpic .cp-b { stroke: currentColor; stroke-width: 1.5; } .cpic .cp-l { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.cpic .cp-t { font-size: 10px; font-weight: 700; fill: currentColor; stroke: none; }
+.cpic .cp-trk { stroke: var(--c-border); stroke-width: 4; stroke-linecap: round; } .cpic .cp-on { stroke: var(--c-accent); stroke-width: 4; stroke-linecap: round; }
+.cpic .cp-trk-f { fill: var(--c-border); } .cpic .cp-on-f { fill: var(--c-accent); } .cpic .cp-k { fill: #fff; stroke: var(--c-accent); stroke-width: 1.5; }
+ .seg.tabs button { padding: 0 4px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .tabpanel { display: flex; flex-direction: column; gap: 14px; }
 .fields { display: flex; flex-direction: column; gap: 8px; } .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .field { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 8px 8px 8px; }
@@ -1905,6 +1923,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     if (!el) return;
     const kind = targetControl(this._hass, this._cfg);
     el.hidden = kind === 'buttons' || t == null;
+    this._vdlg.querySelector('.vd-target')?.classList.toggle('slider', !el.hidden); // a shown slider replaces − / +
     if (el.hidden) return;
     el.className = `soft ctl ${kind}${v.off ? ' off' : ''}${this._drag ? ' drag' : ''}`;
     el.setAttribute('aria-valuemin', v.min); el.setAttribute('aria-valuemax', v.max);
