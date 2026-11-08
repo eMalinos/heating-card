@@ -58,9 +58,38 @@
   set(`sensor.heating_outdoor_temperature_${C}`, '6.2');
   set(`binary_sensor.heating_state_${C}`, 'on', { title: 'Topení přízemí' });
 
+  // valve dialog data: Šatna = low batteries + two window sensors, Dětský pokoj = window open 12 min, reminder 30
+  const sensor = (id, state, attributes = {}) => { states[id] = { state, attributes }; };
+  sensor('sensor.dress_battery', '14', { device_class: 'battery' }); sensor('sensor.dress_signal', '-71', { device_class: 'signal_strength' });
+  sensor('sensor.dress_valve_position', '12'); sensor('binary_sensor.dress_calibration', 'off');
+  sensor('sensor.balkon_battery', '8', { device_class: 'battery' }); sensor('sensor.kuchyn_battery', '85', { device_class: 'battery' });
+  sensor('sensor.kids_battery', '82', { device_class: 'battery' }); sensor('sensor.kids_valve_position', '0');
+  sensor('binary_sensor.balkon', 'off'); sensor('binary_sensor.kuchyn', 'off'); sensor('binary_sensor.kids_window', 'on');
+  const entities = {};
+  for (const id of [ids.dressing, 'sensor.dress_battery', 'sensor.dress_signal', 'sensor.dress_valve_position', 'binary_sensor.dress_calibration']) entities[id] = { device_id: 'dress' };
+  for (const id of [ids.kids, 'sensor.kids_battery', 'sensor.kids_valve_position']) entities[id] = { device_id: 'kids' };
+  const since = new Date(Date.now() - 12 * 60000).toISOString();
+  const old = '2026-11-01T08:00:00Z';
+  set(`sensor.heating_off_schedule_${C}`, '2', { window_open_climates: [ids.kids], windows: {
+    [ids.dressing]: [{ entity_id: 'binary_sensor.balkon', name: 'Okno balkon', state: 'off', open: false, since: old, battery: 'sensor.balkon_battery' },
+      { entity_id: 'binary_sensor.kuchyn', name: 'Okno kuchyň', state: 'off', open: false, since: old, battery: 'sensor.kuchyn_battery' }],
+    [ids.kids]: [{ entity_id: 'binary_sensor.kids_window', name: 'Okno dětský pokoj', state: 'on', open: true, since, battery: null }] } });
+  set(`sensor.heating_low_batteries_${C}`, '3', { list_low: [{ name: 'Šatna', source: 'valve', state: 14, climates: [ids.dressing] }, { name: 'Okno balkon', source: 'window', state: 8, climates: [ids.dressing] }] });
+  sensor(`input_number.heating_window_reminder_${C}`, '30');
+  const wsCalls = [];
+  const callWS = async (msg) => {
+    wsCalls.push(msg);
+    const end = Date.now(), h = (n) => (end - n * 3600000) / 1000;
+    return Object.fromEntries(msg.entity_ids.map((id) => [id, id.startsWith('climate.')
+      ? [{ lu: h(24), a: { current_temperature: 19, temperature: 18 } }, { lu: h(10), a: { current_temperature: 20.5, temperature: 21 } }, { lu: h(1), a: { current_temperature: 19.6 } }]
+      : [{ lu: h(24), s: id === 'binary_sensor.kids_window' ? 'on' : 'off' }]]));
+  };
+  const confirms = [];
+  window.confirm = (m) => { confirms.push(m); return true; };
+
   const calls = [];
   const infos = [];
-  const hass = { states, callService: async (domain, service, data) => { calls.push({ domain, service, data }); } };
+  const hass = { states, entities, callWS, callService: async (domain, service, data) => { calls.push({ domain, service, data }); } };
   const cfg = { circuit: C, valves: valveIds };
 
   const card = document.createElement('heating-card');
@@ -76,6 +105,8 @@
   const press = async (el, ms = 0) => { ptr(el, 'pointerdown'); if (ms) await tick(ms); ptr(el, 'pointerup'); };
   await tick(100);
 
+  // ?vd=dress|kids opens that valve's dialog (screenshots of the two V4 boards)
+  if (q.get('vd')) { await press($$('.main')[q.get('vd') === 'kids' ? 5 : 7].querySelector('.dot')); await tick(200); }
   if (q.get('shot')) { document.getElementById('out').remove(); throw 'shot'; }
 
   const r = {};
@@ -147,18 +178,21 @@
   r.tapSchedule = dlg.open && JSON.stringify(sched?.cfg) === JSON.stringify({ valve: ids.living, circuits: [{ id: C, valves: valveIds }], time_step: 15 }) && sched.hass === hass;
   dlg.close(); await tick();
   await press(m0().querySelector('.dot')); await tick();
-  r.iconInfo = infos.at(-1) === ids.living && !dlg.open;
+  const vd = $('dialog.vd');
+  r.iconInfo = vd.open && vd.querySelector('.vd-title').textContent === 'Obývák' && !dlg.open && infos.length === 0;
+  vd.close(); await tick();
 
   // hold and double tap
   card.setConfig({ ...cfg, schedule_gesture: 'hold', info_gesture: 'double_tap' });
   await press(m0()); await tick(350);
   const nInfo = infos.length;
-  r.tapNothing = !dlg.open && infos.length === nInfo;
+  r.tapNothing = !dlg.open && !vd.open && infos.length === nInfo;
   await press(m0(), 650); await tick();
   r.holdSchedule = dlg.open;
   dlg.close(); await tick();
   await press(m0()); await press(m0()); await tick(400);
-  r.doubleTapOnce = infos.length === nInfo + 1 && infos.at(-1) === ids.living;
+  r.doubleTapOnce = vd.open && vd.querySelector('.vd-title').textContent === 'Obývák';
+  vd.close(); await tick();
   card.setConfig({ ...cfg, schedule_gesture: 'icon_hold', info_gesture: 'none' });
   await press(m0().querySelector('.dot'), 650); await tick();
   r.iconHold = dlg.open;
@@ -167,19 +201,65 @@
   // keyboard: Enter / Space on the text run schedule, on the icon button info, whatever the gestures are
   card.setConfig({ ...cfg, schedule_gesture: 'hold', info_gesture: 'double_tap' });
   const key = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, composed: true, cancelable: true }));
-  const nInfoK = infos.length;
-  const txt = root.querySelector('.txt[role="button"]');
+    const txt = root.querySelector('.txt[role="button"]');
   key(txt, 'Enter'); await tick();
   r.keySchedule = dlg.open;
   dlg.close(); await tick();
   const iconBtn = root.querySelector('button.dot');
   r.iconIsButton = iconBtn.getAttribute('aria-label') === 'Detail Obývák';
   key(iconBtn, ' '); await tick();
-  r.keyInfo = infos.length === nInfoK + 1 && infos.at(-1) === ids.living;
+  r.keyInfo = vd.open;
+  vd.close(); await tick();
   card.setConfig({ ...cfg, schedule_gesture: 'none', info_gesture: 'none' });
   r.noneNoControls = !root.querySelector('button.dot') && !root.querySelector('.txt[role="button"]');
   key(root.querySelector('.txt'), 'Enter'); await tick();
-  r.noneNoAction = !dlg.open && infos.length === nInfoK + 1;
+  r.noneNoAction = !dlg.open && !vd.open;
+
+  // valve dialog: battery board (Šatna)
+  card.setConfig(cfg); card.hass = hass; await tick();
+  const dress = $$('.main')[7];
+  await press(dress.querySelector('.dot')); await tick(100);
+  const t = (sel) => vd.querySelector(sel)?.textContent.replace(/\s+/g, ' ').trim();
+  r.vdBattery = vd.open && t('.vd-title') === 'Šatna' && t('.vd-alert') === 'Vyměň baterie (2) · hlavice 14 %, okno balkon 8 %' && !!vd.querySelector('.vd-head .badge.blink')
+    && vd.querySelector('.vd-tile.low .fv').textContent === '14 %' && t('.vd-win .wn') === 'Okno balkon';
+  r.vdFacts = [...vd.querySelectorAll('.vd-tile .fv')].map((e) => e.textContent).join('|') === '14 %|−71 dBm|12 %|V pořádku';
+  r.vdWindows = vd.querySelectorAll('.vd-win').length === 2 && vd.querySelectorAll('.vd-h')[1].textContent === 'Okna (2)' && vd.querySelector('.vd-win .chip.low') && vd.querySelectorAll('.vd-win .chip').length === 2;
+  r.vdChart = !!vd.querySelector('.vd-chart svg path[stroke="#E8592C"]') && wsCalls.at(-1).entity_ids.length === 3 && vd.querySelectorAll('.band').length === 0;
+  r.vdStepEnabled = !vd.querySelector('[data-act="step"]').disabled;
+  vd.querySelector('[data-d="1"]').click(); await tick();
+  r.vdStep = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'climate', service: 'set_temperature', data: { entity_id: ids.dressing, temperature: 19.5 } }) && t('.tv') === '19,5 °C';
+  vd.querySelector('[data-act="calibrate"]').click(); await tick();
+  r.vdCalibrate = confirms.at(-1).startsWith('Kalibrovat hlavici?') && JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'script', service: `heating_calibrate_${C}`, data: { climate: ids.dressing } });
+  vd.querySelector('[data-act="schedule"]').click(); await tick();
+  r.vdSchedule = !vd.open && dlg.open && dlg.querySelector('heating-schedule-card').cfg.valve === ids.dressing;
+  dlg.close(); await tick();
+  // live: the valve's battery recovers while the dialog is open
+  await press($$('.main')[7].querySelector('.dot')); await tick(100);
+  card.hass = { ...hass, states: { ...states, 'sensor.dress_battery': { state: '90', attributes: { device_class: 'battery' } }, [`sensor.heating_low_batteries_${C}`]: { state: '0', attributes: { low_battery: [], list_low: [] } } } }; await tick();
+  r.vdLive = t('.vd-tile .fv') === '90 %' && !vd.querySelector('.vd-alert') && !vd.querySelector('.vd-head .badge');
+  card.hass = hass; await tick();
+  vd.querySelector('[data-act="history"]').click(); await tick();
+  r.vdHistory = !vd.open && infos.at(-1) === ids.dressing;
+  vd.close();
+
+  // window board (Dětský pokoj)
+  await press($$('.main')[5].querySelector('.dot')); await tick(100);
+  r.vdWindowAlert = t('.vd-alert') === 'Okno dětský pokoj otevřené 12 min · hlavice netopí, dokud se okno nezavře. Připomenu za 18 min.' && vd.querySelector('.vd-alert').classList.contains('info');
+  r.vdWindowDisabled = [...vd.querySelectorAll('[data-act="step"]')].every((b) => b.disabled) && t('.vd-target .lbl') === 'Cíl · platí po zavření okna';
+  r.vdBand = vd.querySelectorAll('.vd-chart .band').length === 1 && t('.vd-win .ws') === 'Otevřené · 12 min' && vd.querySelector('.vd-win .dot.winopen') && !vd.querySelector('.vd-win .chip');
+  card.hass = { ...hass, states: { ...states, 'binary_sensor.kids_window': { state: 'unavailable', attributes: {} }, [`sensor.heating_off_schedule_${C}`]: { state: '2', attributes: { ...states[`sensor.heating_off_schedule_${C}`].attributes, window_open_climates: [], windows: { [ids.kids]: [{ entity_id: 'binary_sensor.kids_window', name: 'Okno dětský pokoj', state: 'unavailable', open: false, since, battery: null }] } } } } };
+  await tick();
+  r.vdUnavailable = t('.vd-win .ws') === 'Čidlo nedostupné' && !vd.querySelector('.vd-alert');
+  card.hass = hass; vd.close(); await tick();
+  // the close button
+  await press($$('.main')[0].querySelector('.dot')); await tick(100);
+  vd.querySelector('[data-act="close"]').click(); await tick();
+  r.vdClose = !vd.open;
+  // a failing history leaves the dialog usable
+  card.hass = { ...hass, callWS: async () => { throw new Error('no history'); } };
+  await press($$('.main')[0].querySelector('.dot')); await tick(100);
+  r.vdNoHistory = vd.open && t('.chart-msg') === 'Historie není k dispozici.' && !!vd.querySelector('.vd-foot');
+  vd.close(); await tick();
 
   r.noErrors = errors.length === 0;
   const ok = Object.values(r).every(Boolean);

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, fmt, plural } from '../dist/heating-card.js';
+import { normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, fmt, plural } from '../dist/heating-card.js';
 
 const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/states.json', import.meta.url), 'utf8'));
 const C = 'circuit_demo';
@@ -218,4 +218,99 @@ test('circuit active only when exactly on; unknown is shown as unknown', () => {
   assert.equal(view(modeOff).state, 'Vypnuto · 15,6 °C');
   assert.equal(circuitView(world(modeOff), CFG).subtitle, 'Vypnuto · hlavice na 5 °C');
   assert.equal(view(unk('off')).state, 'Vypnuto · 15,6 °C');
+});
+
+// ---- valve dialog ----
+const NOW = Date.parse('2026-11-08T12:00:00Z');
+// the valve's device: battery, signal, position, calibration (+ a window sensor device with its own battery)
+const device = () => ({
+  states: {
+    'sensor.k_battery': { state: '82', attributes: { device_class: 'battery' } },
+    'sensor.k_signal': { state: '-71', attributes: { device_class: 'signal_strength' } },
+    'sensor.k_valve_position': { state: '12', attributes: {} },
+    'binary_sensor.k_calibration': { state: 'off', attributes: {} },
+    'sensor.balkon_battery': { state: '8', attributes: { device_class: 'battery' } },
+    'sensor.kuchyn_battery': { state: '85', attributes: { device_class: 'battery' } },
+  },
+  entities: Object.fromEntries([K, 'sensor.k_battery', 'sensor.k_signal', 'sensor.k_valve_position', 'binary_sensor.k_calibration', 'sensor.other'].map((id) => [id, { device_id: 'dk' }])),
+});
+const wins = [
+  { entity_id: 'binary_sensor.balkon', name: 'Okno balkon', state: 'off', open: false, since: '2026-11-08T08:00:00Z', battery: 'sensor.balkon_battery' },
+  { entity_id: 'binary_sensor.kuchyn', name: 'Okno kuchyň', state: 'off', open: false, since: '2026-11-08T08:00:00Z', battery: 'sensor.kuchyn_battery' },
+];
+const detail = (patch, now = NOW) => {
+  const w = world(patch);
+  const d = device();
+  Object.assign(w.states, d.states);
+  for (const [id, p] of Object.entries(patch)) if (id.startsWith('sensor.') || id.startsWith('input_')) w.states[id] = { state: p.state ?? w.states[id]?.state, attributes: { ...w.states[id]?.attributes, ...p.attributes } };
+  w.entities = d.entities;
+  return valveDetail(w, CFG, K, now);
+};
+const offs = (windows) => ({ [`sensor.heating_off_schedule_${C}`]: { attributes: { windows: { [K]: windows } } } });
+
+test('valveDetail: V4-Valve board (low batteries, two window sensors)', () => {
+  const d = detail({
+    ...offs(wins),
+    [`sensor.heating_low_batteries_${C}`]: { attributes: {
+      low_battery: [{ climate: K, source: 'valve', state: 14 }, { climate: K, source: 'window', state: 8 }],
+      list_low: [{ name: 'Šatna', source: 'valve', state: 14, climates: [K] }, { name: 'Okno balkon', source: 'window', state: 8, climates: [K] }] } },
+    'sensor.k_battery': { state: '14', attributes: { device_class: 'battery' } },
+  });
+  assert.deepEqual(d.alert, { kind: 'battery', title: 'Vyměň baterie (2)', text: ' · hlavice 14 %, okno balkon 8 %' });
+  assert.deepEqual(d.battery, { value: 14, low: true });
+  assert.equal(d.signal, -71);
+  assert.equal(d.position, 12);
+  assert.equal(d.calibration, 'ok');
+  assert.deepEqual(d.windows.map((w) => [w.name, w.state, w.battery, w.lowBattery]), [['Okno balkon', 'Zavřené', 8, true], ['Okno kuchyň', 'Zavřené', 85, false]]);
+  const html = detailHtml(d);
+  assert.match(html, /Vyměň baterie \(2\)/);
+  assert.match(html, /Okna \(2\)/);
+  assert.match(html, /vd-tile low/);
+});
+
+test('valveDetail: V4-ValveWindow board (window open 12 min, reminder 30 -> 18)', () => {
+  const open = [{ ...wins[0], state: 'on', open: true, since: '2026-11-08T11:48:00Z', battery: 'sensor.balkon_battery' }, wins[1]];
+  const d = detail({ ...offs(open), [`sensor.heating_off_schedule_${C}`]: { attributes: { windows: { [K]: open }, window_open_climates: [K] } },
+    [`input_number.heating_window_reminder_${C}`]: { state: '30' } });
+  assert.equal(d.view.phase, 'window');
+  assert.equal(d.alert.kind, 'window');
+  assert.equal(d.alert.title, 'Okno balkon otevřené 12 min');
+  assert.equal(d.alert.text, ' · hlavice netopí, dokud se okno nezavře. Připomenu za 18 min.');
+  assert.equal(d.windows[0].state, 'Otevřené · 12 min');
+  const html = detailHtml(d);
+  assert.match(html, /Cíl · platí po zavření okna/);
+  assert.equal((html.match(/data-act="step"[^>]* disabled/g) || []).length, 2);
+});
+
+test('valveDetail: reminder 0 or used up, unavailable sensor, no windows', () => {
+  const open = [{ ...wins[0], state: 'on', open: true, since: '2026-11-08T11:48:00Z' }];
+  const base = { [`sensor.heating_off_schedule_${C}`]: { attributes: { windows: { [K]: open }, window_open_climates: [K] } } };
+  assert.equal(detail(base).alert.text, ' · hlavice netopí, dokud se okno nezavře.');
+  assert.equal(detail({ ...base, [`input_number.heating_window_reminder_${C}`]: { state: '0' } }).alert.text, ' · hlavice netopí, dokud se okno nezavře.');
+  assert.equal(detail({ ...base, [`input_number.heating_window_reminder_${C}`]: { state: '10' } }).alert.text, ' · hlavice netopí, dokud se okno nezavře.');
+  const dead = detail(offs([{ ...wins[0], state: 'unavailable', open: false }, { ...wins[1], state: 'unknown', open: false }]));
+  assert.deepEqual(dead.windows.map((w) => w.state), ['Čidlo nedostupné', 'Čidlo nedostupné']);
+  assert.equal(dead.alert, null);
+  const none = detail({});
+  assert.deepEqual(none.windows, []);
+  assert.equal(none.alert, null);
+  assert.doesNotMatch(detailHtml(none), /Okna \(/);
+  // no device facts: dashes, never a crash
+  const bare = valveDetail(world(), CFG, K, NOW);
+  assert.deepEqual([bare.battery, bare.signal, bare.position, bare.calibration], [null, null, null, null]);
+  assert.match(detailHtml(bare), /Baterie/);
+});
+
+test('chartModel: lines, window bands, hour labels', () => {
+  const end = Date.parse('2026-11-08T12:00:00');
+  const h = (n) => (end - n * 3600000) / 1000;
+  const m = chartModel([{ lu: h(24), a: { current_temperature: 19, temperature: 18 } }, { lu: h(12), a: { current_temperature: 21 } }, { lu: h(0), a: { temperature: 21 } }],
+    [[{ lu: h(6), s: 'on' }, { lu: h(3), s: 'off' }], [{ lu: h(4), s: 'on' }, { lu: h(2), s: 'off' }]], end);
+  assert.match(m.current, /^M0 .* L440 \d+(\.\d)?$/);
+  assert.match(m.target, / H440$/);
+  assert.equal(m.bands.length, 1); // 6 h..3 h and 4 h..2 h overlap -> one band 6 h..2 h
+  assert.equal(m.bands[0].x, 330);
+  assert.equal(m.bands[0].w, Math.round((4 / 24) * 4400) / 10);
+  assert.deepEqual(m.labels.map((l) => l.text), ['12:00', '18:00', '0:00', '6:00', '12:00']);
+  assert.equal(chartModel([], [], end), null);
 });

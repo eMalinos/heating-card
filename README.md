@@ -24,14 +24,22 @@ valves:                            # the circuit's valves
   - climate.bedroom_valve
 heading: Topení přízemí            # optional; default: binary_sensor.heating_state_<circuit> attribute title, else the id
 schedule_gesture: tap              # opens the schedule card for the valve
-info_gesture: icon_tap             # opens the valve's more-info
+info_gesture: icon_tap             # opens the valve dialog
 ```
 
 Gestures are `tap`, `double_tap`, `hold`, `icon_tap`, `icon_double_tap`, `icon_hold` or `none` (the same values as the heating parameters); the two must differ unless both are `none`.
 
 Entities read (`<c>` is the circuit): `switch.boiler_<c>`, `input_select.heating_mode_<c>`, `input_select.heating_auto_rule_<c>`, `input_datetime.heating_time_from_<c>` / `_to_<c>`, `input_number.heating_weather_threshold_<c>`, `input_text.heating_status_<c>`, `sensor.heating_program_<c>`, `sensor.heating_applying_<c>`, `sensor.heating_off_schedule_<c>`, `sensor.heating_valves_<c>`, `sensor.heating_low_batteries_<c>`, `binary_sensor.heating_active_<c>`, `binary_sensor.heating_state_<c>`, `sensor.heating_outdoor_temperature_<c>` and each valve's `climate` entity.
 
-Actions: the mode segments call `input_select.select_option`, the cross on the status message clears `input_text.heating_status_<c>`, **Srovnat** presses `input_button.heating_sync_<c>`, − / + change a valve's target by 0.5 °C (not on a valve with an open window or while the circuit is off). The valve dialog, program, settings and statistics dialogs come later; until then `schedule_gesture` opens `heating-schedule-card` in a simple dialog.
+Actions: the mode segments call `input_select.select_option`, the cross on the status message clears `input_text.heating_status_<c>`, **Srovnat** presses `input_button.heating_sync_<c>`, − / + change a valve's target by 0.5 °C (not on a valve with an open window or while the circuit is off). The program, settings and statistics dialogs come later; `schedule_gesture` opens `heating-schedule-card` in a simple dialog.
+
+## Valve dialog
+
+`info_gesture` opens the valve dialog (a bottom sheet under 600 px): the valve's icon circle (blinking battery badge when a battery is low), one alert under the header (the open window with minutes open and the reminder, else every low battery of the valve), the current temperature with the valve position, the target stepper (disabled with an open window or while the circuit is off), a 24 h chart of the room and target temperature with the open-window spans as tinted bands, the *Hlavice* tiles (battery, signal, valve position, calibration; the battery tile turns red and blinks when low), one row per window sensor (*Okna*) with its state and its own battery, and the footer: **Kalibrovat** (after a confirm, runs `script.heating_calibrate_<c>` with `climate`) and **Rozvrh** (the schedule dialog). The header's history button opens the valve's more-info. A window sensor that is `unavailable` / `unknown` shows *Čidlo nedostupné*, never *Zavřené*.
+
+Device facts (battery, signal, valve position, calibration) are found on the valve's device by device class / entity id suffix, like the Mushroom detail does; windows come from the `windows` attribute of `sensor.heating_off_schedule_<c>`; the reminder from `input_number.heating_window_reminder_<c>`; the low-battery threshold from `input_number.heating_low_battery_threshold` (30 % by default). The chart reads the history over `history/history_during_period`; without history the dialog shows a note instead.
+
+![Valve dialog, low batteries](docs/valve-battery.png) ![Valve dialog, open window](docs/valve-window.png)
 
 ## Look
 
@@ -40,12 +48,12 @@ Colours, radii and shadows come from the `--hfb-*` tokens of the [Homecraft styl
 ## Tests
 
 ```sh
-node --test tests/*.test.mjs                      # pure logic: config, valveView, circuitView
+node --test tests/*.test.mjs                      # pure logic: config, valveView, circuitView, valveDetail, chartModel
 python3 -m http.server 8766 &
 "Google Chrome" --headless=new --virtual-time-budget=30000 --dump-dom http://localhost:8766/tests/dom.html | grep RESULT   # prints RESULT OK
 ```
 
-`tests/dom.html` renders the card with a fake `hass` built from `tests/fixtures/states.json` (real entity shapes from the dev HA, `circuit_demo`). Looks: `?theme=homecraft`, `?theme=dark`, none (HA fallbacks); add `&shot=1` for a screenshot.
+`tests/dom.html` renders the card with a fake `hass` built from `tests/fixtures/states.json` (real entity shapes from the dev HA, `circuit_demo`). Looks: `?theme=homecraft`, `?theme=dark`, none (HA fallbacks); add `&shot=1` for a screenshot and `&vd=dress` / `&vd=kids` to open the valve dialog (battery / open-window board).
 
 ## License
 
