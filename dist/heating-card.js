@@ -366,7 +366,7 @@ export function nextTarget(v, pending, dir, now = Date.now()) {
 // The valve dialog's target control (input_select.heating_target_control_<c>): buttons = − / + only (default),
 // arc / ruler / track = a slider under the target row instead of its − / + (design v8).
 export const CONTROLS = [['buttons', 'Tlačítka'], ['arc', 'Oblouk'], ['ruler', 'Pravítko'], ['track', 'Dráha']];
-// 48×24 pictures of the controls for the settings' picker (currentColor, the accent marks the value)
+// 48×24 pictures of the controls for the settings' picker (lines in currentColor, the value part in the accent)
 const CONTROL_PIC = {
   buttons: '<rect x="2" y="6" width="12" height="12" rx="4" class="cp-b"/><path d="M5.5 12h5" class="cp-l"/><text x="24" y="16.5" text-anchor="middle" class="cp-t">21</text><rect x="34" y="6" width="12" height="12" rx="4" class="cp-b"/><path d="M37.5 12h5M40 9.5v5" class="cp-l"/>',
   arc: '<path d="M15 21a11 11 0 1 1 18 0" class="cp-trk"/><path d="M15 21a11 11 0 0 1 9-17.6" class="cp-on"/><circle cx="24" cy="3.4" r="2.6" class="cp-k"/>',
@@ -974,9 +974,14 @@ const SETTINGS_BODY = {
     : `<div class="pair">${v.times.map(timeHtml).join('')}</div>`}
   <div class="help">Pravidlo platí jen v režimu <b>Počasí</b>. V režimu Zapnuto kotel topí podle hlavic vždy, ve Vypnuto nikdy. Změny platí hned.</div>`,
 
-  boiler: (v) => { const fastOff = v.fields.some((f) => f.off && f.id.includes('heating_fast_start_delta')); return `<div class="vd-h">Fáze hlavice u kondenzačního kotle</div>
-  <figure class="phase" aria-label="Fáze hlavice: rychlý start${fastOff ? ' (vypnutý)' : ''}, topí, doběh, kontrola">
-    <div class="ph"><div class="p-fast${fastOff ? ' is-off' : ''}">Rychlý start</div><div class="p-heat">Topí</div><div class="p-run">Doběh</div><div class="p-chk">Kontrola</div></div>
+  boiler: (v) => {
+    // a switched-off setting dims its phases: threshold 0 turns off fast start and the run, release check 0 the check
+    const off = (n) => v.fields.some((f) => f.off && f.id.includes(n)), noPhases = off('heating_bypass_threshold');
+    const fastOff = noPhases || off('heating_fast_start_delta'), runOff = noPhases, chkOff = off('heating_release_check');
+    const lbl = (name, o) => `${name}${o ? ' (vypnutý)' : ''}`;
+    return `<div class="vd-h">Fáze hlavice u kondenzačního kotle</div>
+  <figure class="phase" aria-label="Fáze hlavice: ${lbl('rychlý start', fastOff)}, topí, ${lbl('doběh', runOff)}, ${lbl('kontrola', chkOff)}">
+    <div class="ph"><div class="p-fast${fastOff ? ' is-off' : ''}">Rychlý start</div><div class="p-heat">Topí</div><div class="p-run${runOff ? ' is-off' : ''}">Doběh</div><div class="p-chk${chkOff ? ' is-off' : ''}">Kontrola</div></div>
     <div class="cap"><span>pod rozvrhem</span><span>rozvrh dosažen</span><span>hlavice zavřená</span></div>
   </figure>
   ${fieldList(v.fields)}
@@ -1618,7 +1623,8 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .cpic .cp-b { stroke: currentColor; stroke-width: 1.5; } .cpic .cp-l { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 .cpic .cp-t { font-size: 10px; font-weight: 700; fill: currentColor; stroke: none; }
 .cpic .cp-trk { stroke: var(--c-border); stroke-width: 4; stroke-linecap: round; } .cpic .cp-on { stroke: var(--c-accent); stroke-width: 4; stroke-linecap: round; }
-.cpic .cp-trk-f { fill: var(--c-border); } .cpic .cp-on-f { fill: var(--c-accent); } .cpic .cp-k { fill: #fff; stroke: var(--c-accent); stroke-width: 1.5; } .seg.tabs button { padding: 0 4px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.cpic .cp-trk-f { fill: var(--c-border); } .cpic .cp-on-f { fill: var(--c-accent); } .cpic .cp-k { fill: #fff; stroke: var(--c-accent); stroke-width: 1.5; }
+ .seg.tabs button { padding: 0 4px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .tabpanel { display: flex; flex-direction: column; gap: 14px; }
 .fields { display: flex; flex-direction: column; gap: 8px; } .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .field { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 8px 8px 8px; }
@@ -1916,8 +1922,8 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     const el = this._vdlg.querySelector('.ctl');
     if (!el) return;
     const kind = targetControl(this._hass, this._cfg);
-    this._vdlg.querySelector('.vd-target')?.classList.toggle('slider', kind !== 'buttons'); // a slider replaces − / +
     el.hidden = kind === 'buttons' || t == null;
+    this._vdlg.querySelector('.vd-target')?.classList.toggle('slider', !el.hidden); // a shown slider replaces − / +
     if (el.hidden) return;
     el.className = `soft ctl ${kind}${v.off ? ' off' : ''}${this._drag ? ' drag' : ''}`;
     el.setAttribute('aria-valuemin', v.min); el.setAttribute('aria-valuemax', v.max);
