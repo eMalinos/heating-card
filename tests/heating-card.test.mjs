@@ -333,7 +333,7 @@ test('chartModel: lines, window bands, hour labels', () => {
   assert.equal(chartModel(rows, [{ rows: [{ lu: h(24), s: 'off' }, { lu: h(12), s: 'on' }], since: end - 12 * 3600000 }], end).bands[0].x, 220);
 });
 
-test('chartModel: y ticks, fast-start and overrun strips of this valve', () => {
+test('chartModel: y ticks and fast-start strips of this valve (no overrun)', () => {
   const end = Date.parse('2026-11-08T12:00:00');
   const h = (n) => (end - n * 3600000) / 1000;
   const rows = [{ lu: h(24), a: { current_temperature: 19, temperature: 21 } }];
@@ -341,9 +341,10 @@ test('chartModel: y ticks, fast-start and overrun strips of this valve', () => {
   const m = chartModel(rows, [], end, 24, [{ lu: h(30), a: ph('normal') }, { lu: h(6), a: ph('fast') }, { lu: h(3), a: ph('overrun') }, { lu: h(2), a: ph('normal') }], K);
   assert.deepEqual(m.ticks.map((t) => t.text), ['18°', '19°', '20°', '21°', '22°']);
   assert.deepEqual(m.fast, [{ x: 330, w: 55 }]);
-  assert.deepEqual(m.run, [{ x: 385, w: 18.3 }]);
+  assert.equal(m.run, undefined);
   assert.deepEqual(chartModel(rows, [], end).fast, []);
-  assert.match(detailHtml(detail({}), m), /rychlý start.*doběh/s);
+  assert.match(detailHtml(detail({}), m), /rychlý start/);
+  assert.doesNotMatch(detailHtml(detail({}), m), /lg run|ph-run|>doběh</);
 });
 
 test('signalWord', () => {
@@ -632,7 +633,7 @@ test('settings Ostatní: shared fields, channel, tiles', () => {
   const w = world({
     [`sensor.heating_off_schedule_${C}`]: { attributes: { windows: { [K]: [win('a', true), win('b', false)], [B]: [win('c', false)] } } },
     [`sensor.heating_low_batteries_${C}`]: { attributes: { low_battery: [{ climate: K, source: 'valve', state: 9 }, { climate: K, source: 'window', state: 8 }, { climate: O, source: 'valve', state: 5 }] } },
-    [`switch.boiler_${C}`]: { state: 'off' },
+    [`switch.boiler_${C}`]: { state: 'off', attributes: { friendly_name: 'Kotel přízemí' } },
   });
   w.states[`switch.boiler_${C}`].last_changed = new Date(now - 12 * 60000).toISOString();
   const v = settingsView(w, CFG, 'other', {}, now);
@@ -644,7 +645,7 @@ test('settings Ostatní: shared fields, channel, tiles', () => {
   assert.match(settingsHtml(sv), /Krok cíle hlavice/);
   assert.equal(v.channel, C);
   assert.deepEqual(v.tiles.map((t) => [t.label, t.value, t.caption]), [
-    ['Hlavice', '3', '2 se slabou baterií'], ['Okenní čidla', '3', '1 otevřené'], ['Kotel', `switch.boiler_${C}`, 'vypnuto · 12 min'], ['Venku', '-24,4 °C', 'čidlo okruhu']]);
+    ['Hlavice', '3', '2 se slabou baterií'], ['Okenní čidla', '3', '1 otevřené'], ['Kotel', 'Kotel přízemí', 'vypnuto · 12 min'], ['Venku', '-24,4 °C', 'čidlo okruhu']]);
   const html = settingsHtml(v);
   assert.match(html, /Kanál notifikací/);
   assert.doesNotMatch(html.slice(html.indexOf('Kanál notifikací'), html.indexOf('Okruh')), /data-act/); // not clickable
@@ -695,8 +696,8 @@ test('settings Ostatní: the target control picker only with its helper', () => 
   const v = settingsView(w, CFG, 'other');
   assert.equal(v.control, 'arc');
   const html = settingsHtml(v);
-  assert.match(html, /data-act="control" data-val="arc" data-k="control:arc" aria-pressed="true" class="on">Oblouk/);
-  assert.match(html, /data-val="buttons"[^>]*aria-pressed="false">Tlačítka/);
+  assert.match(html, /data-act="control" data-val="arc" data-k="control:arc" aria-pressed="true" class="cbtn on"><svg class="cpic"[^]*?<span>Oblouk<\/span>/);
+  assert.match(html, /data-val="buttons"[^>]*aria-pressed="false" class="cbtn"><svg class="cpic"[^]*?<span>Tlačítka<\/span>/);
 });
 
 test('tempColor: fixed to the temperature, a fill never stretches it', () => {

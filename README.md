@@ -10,7 +10,7 @@ A Home Assistant card for one heating circuit, in the Homecraft look: a circuit 
 
 **HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/heating-card`, type **Dashboard** → download **Heating Card** → reload the browser.
 
-**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.3`, type **JavaScript module**). Change `?v=` after copying a new version.
+**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.4`, type **JavaScript module**). Change `?v=` after copying a new version.
 
 ## Configuration
 
@@ -103,6 +103,7 @@ python3 -m http.server 8766 &
 
 ## Changelog
 
+- **0.1.4** — valve dialog: no overrun in the chart; the arc / ruler / track slider sits on a tile background and replaces the − / + (only *Tlačítka* keep them); settings: the target control picker shows a small picture of each control, the boiler tile shows its friendly name, every boiler setting shows *Vypnuto* at its off value (bypass threshold 0, close margin below 0, overrun 0, release check 0; close margin below 0 needs heating 1.15.0-beta.2)
 - **0.1.3** — valve dialog chart: dragging it shows real history (it holds 24 h before and after the shown day, the °C axis stays put); a target at the valve's max / min (fast start, overrun, open window, off) is left out of the target line and the °C scale, the strips show those spans.
 - **0.1.2** — valve dialog: chart with a °C axis and fast-start / overrun strips; valve position only once (tile); signal in words; ± step from `input_number.heating_target_step_<c>` (settings › Ostatní, 0.5 °C without it); valve tiles fill the card in columns of at least 160 px; mode segment *Čas* under the time rule; target slider (Oblouk / Pravítko / Dráha) picked in settings › Ostatní; the chart can be dragged back in time (up to 7 days); settings Kotel: the phase strip dims *Rychlý start* while fast start is off.
 - **0.1.1** — settings that are switched off show *Vypnuto*, dimmed: fast start below 0 (one − step from 0,0; needs HFB heating 1.14.0-beta.3, whose helper goes down to −0,1), pump overrun 0 min, window reminder 0 min.
