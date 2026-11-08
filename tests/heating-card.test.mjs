@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { clockText, settingsView, settingsHtml, numField, stepNum, outdoorSources, programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural } from '../dist/heating-card.js';
+import { clockText, settingsView, settingsHtml, numField, stepNum, outdoorSources, programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural, signalWord, controlValue, controlHtml, targetControl, snapTarget, RULER_PX, tempColor, stepOf, fmtTarget, currentTarget } from '../dist/heating-card.js';
 
 const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/states.json', import.meta.url), 'utf8'));
 const C = 'circuit_demo';
@@ -116,6 +116,9 @@ test('circuitView: mode hint, status, program, applying, outdoor, title', () => 
   const time = { ...bw, [`input_select.heating_auto_rule_${C}`]: { state: 'time' } };
   assert.equal(c({ ...time, [`input_datetime.heating_time_from_${C}`]: { state: '06:00:00' }, [`input_datetime.heating_time_to_${C}`]: { state: '22:30:00' } }).hint, '06:00–22:30 každý den');
   assert.equal(c({ ...time, [`input_datetime.heating_time_from_${C}`]: { state: 'unknown' } }).hint, 'nastav čas od–do');
+  assert.deepEqual([c(bw).rule, c(time).rule], ['weather', 'time']);
+  assert.match(cardHtml(world(time), CFG), />Čas</);
+  assert.match(cardHtml(world(bw), CFG), />Počasí</);
 
   const status = (s) => c({ [`input_text.heating_status_${C}`]: { state: s } }).status;
   assert.equal(status(''), null);
@@ -170,6 +173,12 @@ test('nextTarget: quick taps add up from the pending value until hass reports it
   assert.equal(nextTarget(v, p, 1, now + 5001), 21.5); // pending expired
   assert.equal(nextTarget({ ...v, target: 30 }, {}, 1), 30); // clamped
   assert.equal(nextTarget({ ...v, target: null }, {}, 1), null);
+  assert.equal(nextTarget({ ...v, step: 0.1 }, {}, 1, now), 21.1);
+  // step: the circuit's helper, else 0.5 (the valve's target_temp_step 0.1 is ignored)
+  const kw = (p) => valveView(world(p), CFG, K).step;
+  assert.equal(kw({}), 0.5);
+  assert.equal(kw({ [`input_number.heating_target_step_${C}`]: { state: '0.2' } }), 0.2);
+  assert.equal(kw({ [`input_number.heating_target_step_${C}`]: { state: 'unavailable' } }), 0.5);
 });
 
 test('program: unavailable sensor falls back to the select, else a dash; Czech names', () => {
@@ -311,7 +320,7 @@ test('chartModel: lines, window bands, hour labels', () => {
   assert.equal(m.bands.length, 1); // 6 h..3 h and 4 h..2 h overlap -> one band 6 h..2 h
   assert.equal(m.bands[0].x, 330);
   assert.equal(m.bands[0].w, Math.round((4 / 24) * 4400) / 10);
-  assert.deepEqual(m.labels.map((l) => l.text), ['12:00', '18:00', '0:00', '6:00', '12:00']);
+  assert.deepEqual(m.labels.map((l) => l.text), ['12:00', '18:00', '8. 11.', '6:00', '12:00']);
   assert.equal(chartModel([], [], end), null);
   // an open window starts at its `since`, not at the chart start: history says "on" from the start state, since = 12 min ago
   const rows = [{ lu: h(24), a: { current_temperature: 19 } }];
@@ -322,6 +331,23 @@ test('chartModel: lines, window bands, hour labels', () => {
   assert.deepEqual(chartModel(rows, [{ rows: [], since: end - 48 * 3600000 }], end).bands, [{ x: 0, w: 440 }]);
   // an opening in the history wins when it is later than nothing else says
   assert.equal(chartModel(rows, [{ rows: [{ lu: h(24), s: 'off' }, { lu: h(12), s: 'on' }], since: end - 12 * 3600000 }], end).bands[0].x, 220);
+});
+
+test('chartModel: y ticks, fast-start and overrun strips of this valve', () => {
+  const end = Date.parse('2026-11-08T12:00:00');
+  const h = (n) => (end - n * 3600000) / 1000;
+  const rows = [{ lu: h(24), a: { current_temperature: 19, temperature: 21 } }];
+  const ph = (p) => ({ phases: { [K]: [p], 'climate.other': ['fast'] } });
+  const m = chartModel(rows, [], end, 24, [{ lu: h(30), a: ph('normal') }, { lu: h(6), a: ph('fast') }, { lu: h(3), a: ph('overrun') }, { lu: h(2), a: ph('normal') }], K);
+  assert.deepEqual(m.ticks.map((t) => t.text), ['18°', '19°', '20°', '21°', '22°']);
+  assert.deepEqual(m.fast, [{ x: 330, w: 55 }]);
+  assert.deepEqual(m.run, [{ x: 385, w: 18.3 }]);
+  assert.deepEqual(chartModel(rows, [], end).fast, []);
+  assert.match(detailHtml(detail({}), m), /rychlý start.*doběh/s);
+});
+
+test('signalWord', () => {
+  assert.deepEqual([-55, -70, -71, -85, -86].map(signalWord), ['Silný', 'Silný', 'OK', 'OK', 'Slabý']);
 });
 
 test('valveDetail: unparsable since, battery names, unknown circuit state', () => {
@@ -490,6 +516,8 @@ test('settings Kotel / Okna: the shipped off rules (fast below 0, overrun 0, rem
   assert.deepEqual([by('Rychlý start pod rozvrhem').text, by('Doběh čerpadla').text], ['Vypnuto', 'Vypnuto']);
   assert.match(by('Rychlý start pod rozvrhem').help, /Pod 0 = vypnuto/);
   assert.match(settingsHtml(kotel), /class="soft field is-off"/);
+  assert.match(settingsHtml(kotel), /class="p-fast is-off"/); // the phase strip dims fast start too
+  assert.doesNotMatch(settingsHtml(sv('boiler')), /p-fast is-off/);
   const old = sv('boiler', set('heating_fast_start_delta', 0));
   assert.equal(old.fields[0].text, '0,0');
   assert.doesNotMatch(old.fields[0].help, /Pod 0/); // helper min 0: off is out of reach
@@ -609,6 +637,11 @@ test('settings Ostatní: shared fields, channel, tiles', () => {
   w.states[`switch.boiler_${C}`].last_changed = new Date(now - 12 * 60000).toISOString();
   const v = settingsView(w, CFG, 'other', {}, now);
   assert.deepEqual(v.fields.map((f) => [f.label, f.text, f.unit]), [['Slabá baterie pod', '30', '%'], ['Stavová zpráva svítí', '30', 's']]);
+  assert.deepEqual(v.circuitFields, []); // no helper: no field
+  const ws = world({ [`input_number.heating_target_step_${C}`]: { state: '0.1', attributes: { min: 0.1, max: 1, step: 0.1, unit_of_measurement: '°C' } } });
+  const sv = settingsView(ws, CFG, 'other', {}, now);
+  assert.deepEqual(sv.circuitFields.map((f) => [f.label, f.text]), [['Krok cíle hlavice', '0,1']]);
+  assert.match(settingsHtml(sv), /Krok cíle hlavice/);
   assert.equal(v.channel, C);
   assert.deepEqual(v.tiles.map((t) => [t.label, t.value, t.caption]), [
     ['Hlavice', '3', '2 se slabou baterií'], ['Okenní čidla', '3', '1 otevřené'], ['Kotel', `switch.boiler_${C}`, 'vypnuto · 12 min'], ['Venku', '-24,4 °C', 'čidlo okruhu']]);
@@ -626,4 +659,70 @@ test('settings Ostatní: shared fields, channel, tiles', () => {
 test('outdoorSources: temperature sensors and weather entities', () => {
   const w = world({ 'weather.home': { state: 'sunny' }, 'sensor.humidity': { attributes: { device_class: 'humidity' } } });
   assert.deepEqual(outdoorSources(w).sort(), ['sensor.heating_outdoor_temperature_circuit_demo', 'sensor.outdoor_temperature', 'weather.home']);
+});
+
+test('target control: kind, value under the pointer, markup', () => {
+  assert.equal(targetControl(world({}), CFG), 'buttons');
+  assert.equal(targetControl(world({ [`input_select.heating_target_control_${C}`]: { state: 'ruler' } }), CFG), 'ruler');
+  assert.equal(targetControl(world({ [`input_select.heating_target_control_${C}`]: { state: 'bogus' } }), CFG), 'buttons');
+  const v = { min: 5, max: 30, step: 0.5, now: 18.4 };
+  assert.equal(snapTarget({ ...v, step: 0.1 }, 20.04), 20);
+  assert.equal(snapTarget(v, 40), 30);
+  // track: the box fraction
+  assert.deepEqual([0, 0.5, 1, 1.4, 0.61].map((fx) => controlValue('track', v, { fx })), [5, 17.5, 30, 30, 20.5]);
+  // ruler: dragging left raises the value, one °C per RULER_PX
+  assert.equal(controlValue('ruler', v, { dx: -RULER_PX * 2, t0: 20 }), 22);
+  assert.equal(controlValue('ruler', v, { dx: RULER_PX / 2, t0: 20 }), 19.5);
+  assert.equal(controlValue('ruler', v, { dx: 1, t0: 21.3 }), 21.3); // a jitter keeps an off-step target
+  assert.equal(controlValue('ruler', v, { dx: -RULER_PX / 2, t0: 21.3 }), 21.8);
+  // arc: 135° (bottom left) = min, top = middle, 45° (bottom right) = max; the bottom gap goes to the nearer end
+  const at = (deg, r = 96) => ({ fx: (140 + r * Math.cos((deg * Math.PI) / 180)) / 280, fy: (112 + r * Math.sin((deg * Math.PI) / 180)) / 214 });
+  assert.equal(controlValue('arc', v, at(135)), 5);
+  assert.equal(controlValue('arc', v, at(270)), 17.5);
+  assert.equal(controlValue('arc', v, at(45)), 30);
+  assert.equal(controlValue('arc', v, at(100)), 5);
+  assert.equal(controlValue('arc', v, at(80)), 30);
+  for (const k of ['arc', 'ruler', 'track']) assert.ok(controlHtml(k, v, 20.5).length > 100, k);
+  assert.match(controlHtml('arc', v, 20.5), /teď<\/div><b>18,4/);
+  assert.match(controlHtml('ruler', v, 20.5), /translateX\(-744px\)/); // (20.5 - 5) * 48
+  assert.match(controlHtml('track', v, 20.5), /tr-knob" style="left: 62%/);
+  assert.equal(controlHtml('track', v, null), '');
+});
+
+test('settings Ostatní: the target control picker only with its helper', () => {
+  assert.equal(settingsView(world({}), CFG, 'other').control, null);
+  const w = world({ [`input_select.heating_target_control_${C}`]: { state: 'arc' } });
+  const v = settingsView(w, CFG, 'other');
+  assert.equal(v.control, 'arc');
+  const html = settingsHtml(v);
+  assert.match(html, /data-act="control" data-val="arc" data-k="control:arc" aria-pressed="true" class="on">Oblouk/);
+  assert.match(html, /data-val="buttons"[^>]*aria-pressed="false">Tlačítka/);
+});
+
+test('tempColor: fixed to the temperature, a fill never stretches it', () => {
+  assert.equal(tempColor(5), 'rgb(16,38,102)');
+  assert.equal(tempColor(7.5), 'rgb(29,76,161)'); // 5 → 9 °C: a visibly lighter blue
+  assert.equal(tempColor(2), tempColor(5));
+  assert.equal(tempColor(21), 'rgb(232,89,44)');
+  assert.equal(tempColor(30), 'rgb(96,6,16)');
+  assert.equal(tempColor(40), 'rgb(96,6,16)');
+  const v = { min: 5, max: 30, step: 0.5, now: 18.4 };
+  // 12 °C: every arc piece is blue (no amber / orange / red), the same colours as the first pieces at 25 °C
+  const strokes = (t) => [...controlHtml('arc', v, t).matchAll(/stroke="(rgb[^"]+)"/g)].map((m) => m[1]);
+  assert.ok(strokes(12).every((c) => { const [r, , b] = c.slice(4, -1).split(',').map(Number); return b > r + 60; }));
+  assert.deepEqual(strokes(25).slice(0, strokes(12).length), strokes(12));
+  // track: the same gradient whatever the value, only its clip moves
+  const bg = (t) => /tr-fill" style="background: ([^;]+);/.exec(controlHtml('track', v, t))[1];
+  assert.equal(bg(12), bg(25));
+});
+
+test('stepOf, fmtTarget, currentTarget', () => {
+  assert.deepEqual([stepOf(0.2), stepOf(0), stepOf(-1), stepOf(null), stepOf(NaN)], [0.2, 0.5, 0.5, 0.5, 0.5]);
+  assert.equal(valveView(world({ [`input_number.heating_target_step_${C}`]: { state: '0' } }), CFG, K).step, 0.5);
+  assert.deepEqual([fmtTarget(21.25, 0.25), fmtTarget(21, 0.5), fmtTarget(21, 1), fmtTarget(null)], ['21,25', '21,0', '21,0', '–']);
+  const v = { climate: K, target: 21 };
+  assert.equal(currentTarget(v, {}, 1000), 21);
+  assert.equal(currentTarget(v, { [K]: { t: 22, at: 1000 } }, 1100), 22);
+  assert.equal(currentTarget(v, { [K]: { t: 21, at: 1000 } }, 1100), 21); // hass reported it
+  assert.equal(currentTarget(v, { [K]: { t: 22, at: 1000 } }, 1000 + 5001), 21); // expired
 });
