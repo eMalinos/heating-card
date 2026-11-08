@@ -469,6 +469,20 @@ test('numField reads value, unit, min, max, step; a missing helper is absent', (
   assert.equal(numField(world(), id, {}, { [id]: { v: 16, at: 1000 } }, 7000).value, 15);
 });
 
+test('numField: off(value) shows Vypnuto without a unit; fast start is off below 0, 0 stays a value', () => {
+  const id = 'input_number.f';
+  const at = (v) => world({ [id]: { state: String(v), attributes: { min: -0.1, max: 3, step: 0.1, unit_of_measurement: '°C' } } });
+  const def = { off: (v) => v < 0 };
+  const off = numField(at(-0.1), id, def);
+  assert.deepEqual([off.off, off.text, off.unit], [true, 'Vypnuto', '']);
+  const zero = numField(at(0), id, def);
+  assert.deepEqual([zero.off, zero.text, zero.unit], [false, '0,0', '°C']);
+  // one − step from 0,0 reaches off, one + step from off is 0,0 again
+  assert.equal(stepNum(zero, -1), -0.1);
+  assert.equal(stepNum(off, 1), 0);
+  assert.equal(numField(at(-0.1), id).off, false); // no off rule: a plain number
+});
+
 test('stepNum: step, clamp, no float noise', () => {
   assert.equal(stepNum({ value: 15, step: 0.5, min: 5, max: 25 }, 1), 15.5);
   assert.equal(stepNum({ value: 25, step: 0.5, min: 5, max: 25 }, 1), 25);
