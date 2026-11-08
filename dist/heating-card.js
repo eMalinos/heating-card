@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.0-beta.5';
+const VERSION = '0.1.0-beta.6';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -16,6 +16,7 @@ const STEP = 0.5;
 
 // MDI paths (@mdi/js 7.4.47), copied so the card has no dependency.
 const ICON = {
+  chartBar: 'M22,21H2V3H4V19H6V10H10V19H12V6H16V19H18V14H22V21Z',
   fire: 'M17.66 11.2C17.43 10.9 17.15 10.64 16.89 10.38C16.22 9.78 15.46 9.35 14.82 8.72C13.33 7.26 13 4.85 13.95 3C13 3.23 12.17 3.75 11.46 4.32C8.87 6.4 7.85 10.07 9.07 13.22C9.11 13.32 9.15 13.42 9.15 13.55C9.15 13.77 9 13.97 8.8 14.05C8.57 14.15 8.33 14.09 8.14 13.93C8.08 13.88 8.04 13.83 8 13.76C6.87 12.33 6.69 10.28 7.45 8.64C5.78 10 4.87 12.3 5 14.47C5.06 14.97 5.12 15.47 5.29 15.97C5.43 16.57 5.7 17.17 6 17.7C7.08 19.43 8.95 20.67 10.96 20.92C13.1 21.19 15.39 20.8 17.03 19.32C18.86 17.66 19.5 15 18.56 12.72L18.43 12.46C18.22 12 17.66 11.2 17.66 11.2M14.5 17.5C14.22 17.74 13.76 18 13.4 18.1C12.28 18.5 11.16 17.94 10.5 17.28C11.69 17 12.4 16.12 12.61 15.23C12.78 14.43 12.46 13.77 12.33 13C12.21 12.26 12.23 11.63 12.5 10.94C12.69 11.32 12.89 11.7 13.13 12C13.9 13 15.11 13.44 15.37 14.8C15.41 14.94 15.43 15.08 15.43 15.23C15.46 16.05 15.1 16.95 14.5 17.5H14.5Z',
   pipe: 'M22 13V21H20V19H16.58C15.81 20.76 14.05 22 12 22S8.19 20.76 7.42 19H4V21H2V13H4V15H7.43C7.93 13.85 8.85 12.93 10 12.42V11H8V9H16V11H14V12.42C15.15 12.93 16.07 13.85 16.57 15H20V13H22M17 2H7C6.45 2 6 2.45 6 3S6.45 4 7 4H10V5H11V8H13V5H14V4H17C17.55 4 18 3.55 18 3S17.55 2 17 2Z',
   closed: 'M22 2V22H20V13H14.82A3 3 0 0 1 9.18 13H4V22H2V2H4V11H9.18A3 3 0 0 1 14.82 11H20V2Z',
@@ -469,7 +470,8 @@ function box1Html(c) {
     <button class="sb" data-act="sync" data-k="sync"${syncing ? ' disabled' : ''}>${syncing ? spinner : ''}Srovnat</button>
     <button class="sb" data-act="open" data-val="program" data-k="open:program">Program</button>
   </div>
-  <div class="vd-foot"><button class="sb soft" data-act="open" data-val="settings" data-k="open:settings">${svg(ICON.cog, 15)}Nastavení</button></div>`;
+  <div class="vd-foot"><button class="sb soft" data-act="open" data-val="settings" data-k="open:settings">${svg(ICON.cog, 15)}Nastavení</button>
+    <button class="sb primary" data-act="open" data-val="stats" data-k="open:stats">${stroke('M4 20h16M7 16V10M12 16V5M17 16v-4', 15)}Statistiky</button></div>`;
 }
 
 // The card's HTML in the pieces that are patched separately: box 1, the box 2 summary, one string per tile.
@@ -867,8 +869,416 @@ export function settingsParts(v) {
 
 export const settingsHtml = (v) => { const p = settingsParts(v); return p.head + p.body; };
 
+// ---- Statistics dialog (#447, design V6-StatsBoiler / V6-StatsWindows) ----
+// Period logic copied from energy-card (ranges, periodEnd, anchor, dataEnd, pct) and extended with weeks.
+
+const HOUR_MS = 3600000;
+const DAY_MS = 86400000;
+const BASE_TEMP = 18; // heating degree days = max(0, 18 °C − mean outdoor temperature) per day
+const STATS_TTL = 300000; // the current period is re-fetched after 5 minutes
+const MONTHS = ['leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+const WEEKDAYS = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
+export const GRANULARITIES = ['day', 'week', 'month', 'year'];
+const GRAN_LABEL = { day: 'Den', week: 'Týden', month: 'Měsíc', year: 'Rok' };
+const GRAN_NOUN = { day: 'den', week: 'týden', month: 'měsíc', year: 'rok' };
+// the comparisons each granularity offers (the first is the default)
+export const COMPARE = { day: ['prev', 'month', 'yoy'], week: ['prev', 'yoy'], month: ['prev', 'yoy'], year: ['prev'] };
+// statistics rows per granularity
+export const PERIOD = { day: 'hour', week: 'hour', month: 'day', year: 'month' };
+
+const pad = (n) => String(n).padStart(2, '0');
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
+const daysIn = (y, m) => new Date(y, m + 1, 0).getDate();
+const czShort = (d) => `${d.getDate()}. ${d.getMonth() + 1}.`;
+const czDate = (d) => `${czShort(d)} ${d.getFullYear()}`;
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const weekday = (d) => (d.getDay() + 6) % 7; // Monday = 0
+const monday = (d) => addDays(d, -weekday(d));
+const sameTime = (d, t) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), t.getHours(), t.getMinutes(), t.getSeconds(), t.getMilliseconds());
+export const hourFloor = (d) => new Date(Math.floor(+d / HOUR_MS) * HOUR_MS);
+
+// ISO 8601 week of a date: {year, week}.
+export function isoWeek(d) {
+  const th = addDays(d, 3 - weekday(d)); // the Thursday of the week decides the year
+  const y = th.getFullYear();
+  return { year: y, week: 1 + Math.floor(Math.round((+th - +new Date(y, 0, 1)) / DAY_MS) / 7) };
+}
+const isoWeeks = (y) => isoWeek(new Date(y, 11, 28)).week; // 52 or 53
+const isoMonday = (y, w) => addDays(monday(new Date(y, 0, 4)), (w - 1) * 7);
+
+export function periodEnd(gran, start) {
+  const y = start.getFullYear(), m = start.getMonth();
+  if (gran === 'day') return addDays(start, 1);
+  if (gran === 'week') return addDays(start, 7);
+  if (gran === 'month') return new Date(y, m + 1, 1);
+  return new Date(y + 1, 0, 1);
+}
+
+// The current period up to `now` and each comparison up to the same offset (day clamped to the month's length).
+function likeRanges(now, gran) {
+  const Y = now.getFullYear(), M = now.getMonth(), D = now.getDate();
+  const at = (y, m, d) => new Date(y, m, Math.min(d, daysIn(y, m)), now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+  const day0 = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  if (gran === 'day') {
+    const prevEnd = sameTime(addDays(now, -1), now), monthEnd = at(Y, M - 1, D), yoyEnd = at(Y - 1, M, D);
+    return { cur: [day0(now), now], prev: [day0(prevEnd), prevEnd], month: [day0(monthEnd), monthEnd], yoy: [day0(yoyEnd), yoyEnd] };
+  }
+  if (gran === 'week') {
+    const start = monday(now), wd = weekday(now), iso = isoWeek(now);
+    const ps = addDays(start, -7);
+    // the same ISO week of last year (a week 53 falls back to 52 when that year has none)
+    const ys = isoMonday(iso.year - 1, Math.min(iso.week, isoWeeks(iso.year - 1)));
+    return { cur: [start, now], prev: [ps, sameTime(addDays(ps, wd), now)], yoy: [ys, sameTime(addDays(ys, wd), now)] };
+  }
+  if (gran === 'month') {
+    const pm = new Date(Y, M - 1, 1);
+    return { cur: [new Date(Y, M, 1), now], prev: [pm, at(pm.getFullYear(), pm.getMonth(), D)], yoy: [new Date(Y - 1, M, 1), at(Y - 1, M, D)] };
+  }
+  return { cur: [new Date(Y, 0, 1), now], prev: [new Date(Y - 1, 0, 1), at(Y - 1, M, D)] };
+}
+
+// Like-for-like ranges; at a period's last millisecond (a whole past period, see anchor()) the comparisons are whole too.
+export function ranges(now, gran) {
+  const r = likeRanges(now, gran);
+  if (+now + 1 !== +periodEnd(gran, r.cur[0])) return r;
+  const whole = (rg) => rg && [rg[0], new Date(+periodEnd(gran, rg[0]) - 1)];
+  return { cur: r.cur, prev: whole(r.prev), month: whole(r.month), yoy: whole(r.yoy) };
+}
+
+// `now` for the period `offset` periods back (0 = the current one, negative = the past): that period's last millisecond.
+export function anchor(now, gran, offset) {
+  if (!offset) return now;
+  const s = ranges(now, gran).cur[0];
+  const start = gran === 'day' ? addDays(s, offset) : gran === 'week' ? addDays(s, 7 * offset)
+    : gran === 'month' ? new Date(s.getFullYear(), s.getMonth() + offset, 1) : new Date(s.getFullYear() + offset, 0, 1);
+  return new Date(+periodEnd(gran, start) - 1);
+}
+
+const rowEnd = (r, period) => r.end ?? ((period = r.p ?? period) === 'hour' ? new Date(+r.start + HOUR_MS) : period === 'day' ? addDays(r.start, 1) : new Date(r.start.getFullYear(), r.start.getMonth() + 1, 1));
+
+// Where the current range's data ends: the end of its last row, never past the current full hour, never before the start.
+export function dataEnd(rows, start, now, period = 'hour') {
+  const last = rows.reduce((m, r) => Math.max(m, +rowEnd(r, period)), +start);
+  return new Date(Math.max(+start, Math.min(last, +hourFloor(new Date(+now + 1)))));
+}
+
+export const pct = (cur, prev) => (prev > 0 ? ((cur - prev) / prev) * 100 : null);
+
+const localMs = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
+// A row's length in days: nominal (1/24, 1, the month's days; a DST change does not stretch it), shorter only when `end` cuts it.
+function rowDays(r, period, end) {
+  period = r.p ?? period; // rows know their own length (hourly tail rows next to daily ones)
+  const full = period === 'hour' ? 1 / 24 : period === 'day' ? 1 : daysIn(r.start.getFullYear(), r.start.getMonth());
+  if (end == null || +end >= +rowEnd(r, period)) return full;
+  return Math.max(0, Math.min(full, (localMs(end) - localMs(r.start)) / DAY_MS));
+}
+
+// Heating degree days of outdoor `mean` rows: Σ max(0, 18 − mean) × the row's length in days
+// (hour 1/24, day 1, month = the days covered until `end`).
+export function degreeDays(rows, period, end) {
+  let s = 0;
+  for (const r of rows) if (r.mean != null) s += Math.max(0, BASE_TEMP - r.mean) * rowDays(r, period, end);
+  return s;
+}
+
+// Mean of the rows' means weighted by their length.
+function weightedMean(rows, period, end) {
+  let acc = 0, w = 0;
+  for (const r of rows) if (r.mean != null) { const d = rowDays(r, period, end); acc += r.mean * d; w += d; }
+  return w > 0 ? acc / w : null;
+}
+
+const sumChange = (rows) => rows.reduce((s, r) => s + Math.max(0, r.change || 0), 0); // a counter reset shows up as a negative row
+const hasRows = (d) => !!d && [d.boiler, d.windowBoiler, d.windowValves, d.outdoor].some((x) => x.length);
+
+const EMPTY = { boiler: [], windowBoiler: [], windowValves: [], outdoor: [] };
+const KINDS = Object.keys(EMPTY);
+
+// The rows of [from, to) of every kind. A coarse row (day / month) that the cut falls into is replaced by the finer
+// `tail` rows (hourly, fetched for exactly that span), so both periods are cut at the same offset.
+function cutRows(d, rg, period) {
+  const sel = {};
+  for (const k of KINDS) {
+    const rows = [];
+    let from = Infinity;
+    for (const x of d[k]) {
+      if (x.start < rg[0] || x.start >= rg[1]) continue;
+      if (d.tail && +rowEnd(x, period) > +rg[1]) from = Math.min(from, +x.start);
+      else rows.push(x);
+    }
+    if (d.tail) for (const x of d.tail[k]) if (+x.start >= from && x.start >= rg[0] && x.start < rg[1]) rows.push(x);
+    sel[k] = rows;
+  }
+  return sel;
+}
+
+// One period's numbers (hours of boiler runtime, window savings, outdoor mean, degree days) from `d` cut to [from, to).
+function statSide(d, rg, period) {
+  const sel = cutRows(d, rg, period);
+  const boiler = sumChange(sel.boiler), hdd = degreeDays(sel.outdoor, period, rg[1]);
+  return {
+    sel,
+    side: {
+      boiler, windowBoiler: sumChange(sel.windowBoiler), windowValves: sumChange(sel.windowValves),
+      outdoorMean: weightedMean(sel.outdoor, period, rg[1]), hdd, perHdd: hdd > 0 ? boiler / hdd : null,
+    },
+  };
+}
+
+// Like-for-like: cut both periods where the current data ends, then compare.
+// `key` = the comparison (prev | month | yoy), `cur` / `cmp` = {boiler, windowBoiler, windowValves, outdoor} rows, plus an optional
+// `tail` of the same shape (hourly rows of the partial day / month at the cut, for month / year granularity).
+// With no rows in the current range but some in the comparison (the first hour of a period) both sides are 0.
+export function analyzeStats(gran, key, now, cur, cmp) {
+  const period = PERIOD[gran];
+  cur = cur ?? EMPTY;
+  const all = KINDS.flatMap((k) => cur[k]);
+  const end = new Date(Math.min(+dataEnd(all, ranges(now, gran).cur[0], now, period), +now));
+  const r = ranges(end, gran);
+  const any = hasRows(cur) || hasRows(cmp);
+  const c = any ? statSide(cur, r.cur, period) : null;
+  const p = any && hasRows(cmp) && r[key] ? statSide(cmp, r[key], period) : null;
+  const cs = c?.side ?? null, ps = p?.side ?? null;
+  return {
+    end, r, cur: cs, cmp: ps, rows: { cur: c?.sel ?? EMPTY, cmp: p?.sel ?? EMPTY },
+    delta: ps ? pct(cs.boiler, ps.boiler) : null, diff: ps ? cs.boiler - ps.boiler : null,
+    normDelta: ps && cs.perHdd != null && ps.perHdd != null ? pct(cs.perHdd, ps.perHdd) : null,
+  };
+}
+
+export const isComplete = (rg, gran) => +rg[1] + 1 === +periodEnd(gran, rg[0]);
+
+export const bucketCount = (gran, start) => (gran === 'day' ? 24 : gran === 'week' ? 7 : gran === 'month' ? daysIn(start.getFullYear(), start.getMonth()) : 12);
+export const bucketIndex = (gran, d) => (gran === 'day' ? d.getHours() : gran === 'week' ? weekday(d) : gran === 'month' ? d.getDate() - 1 : d.getMonth());
+
+// Rows -> bars [{v, t}]: v = Σ change per bucket (minutes when `minutes`, else hours), t = the bucket's outdoor mean.
+export function statBars(gran, rows, n, outdoor = [], minutes = gran === 'day') {
+  const out = Array.from({ length: n }, () => ({ v: 0, t: null }));
+  for (const r of rows) { const b = out[bucketIndex(gran, r.start)]; if (b) b.v += Math.max(0, r.change || 0) * (minutes ? 60 : 1); }
+  const period = PERIOD[gran], acc = Array(n).fill(0), w = Array(n).fill(0);
+  for (const r of outdoor) {
+    const i = bucketIndex(gran, r.start);
+    if (r.mean == null || i >= n) continue;
+    const d = rowDays(r, period);
+    acc[i] += r.mean * d; w[i] += d;
+  }
+  return out.map((b, i) => ({ ...b, t: w[i] ? acc[i] / w[i] : null }));
+}
+
+// Day label with the year only when it is not the reference year.
+const dayLbl = (d, ref) => (d.getFullYear() === ref.getFullYear() ? czShort(d) : czDate(d));
+const weekLbl = (d) => { const w = isoWeek(d); return `týden ${w.week}/${w.year}`; };
+
+// Chip labels of the comparisons offered for `gran`. `now` = the (anchored) period, `ref` = the real now.
+export function chipLabels(now, gran, offset, ref = now) {
+  const r = ranges(now, gran);
+  const s = (k) => r[k]?.[0];
+  const mon = (d) => lower(MONTHS[d.getMonth()]) + (d.getFullYear() === ref.getFullYear() ? '' : ` ${d.getFullYear()}`);
+  const all = {
+    day: { prev: offset ? dayLbl(s('prev'), ref) : 'včera', month: s('month') && dayLbl(s('month'), ref), yoy: s('yoy') && czDate(s('yoy')) },
+    week: { prev: offset ? weekLbl(s('prev')) : 'minulý týden', yoy: s('yoy') && weekLbl(s('yoy')) },
+    month: { prev: s('prev') && mon(s('prev')), yoy: s('yoy') && `${MONTHS[s('yoy').getMonth()]} ${s('yoy').getFullYear()}` },
+    year: { prev: String(now.getFullYear() - 1) },
+  }[gran];
+  return Object.fromEntries(COMPARE[gran].map((k) => [k, all[k]]));
+}
+
+// The navigation label: Dnes 8. 11. / 8. 11. / 3.–9. 11. / Listopad 2025 / 2025
+export function rangeLabel(now, gran, offset, ref = now) {
+  const s = ranges(now, gran).cur[0];
+  if (gran === 'day') return offset ? dayLbl(s, ref) : `Dnes ${czShort(s)}`;
+  if (gran === 'week') {
+    const e = addDays(s, 6);
+    const text = s.getMonth() === e.getMonth() ? `${s.getDate()}.–${e.getDate()}. ${e.getMonth() + 1}.` : `${czShort(s)}–${czShort(e)}`;
+    return e.getFullYear() === ref.getFullYear() ? text : `${text} ${e.getFullYear()}`;
+  }
+  return gran === 'month' ? `${cap(MONTHS[s.getMonth()])} ${s.getFullYear()}` : String(s.getFullYear());
+}
+
+// "do 21:00" / "do 8. 11." / "celý den": how far a period's numbers reach.
+function spanText(rg, gran) {
+  if (+rg[1] <= +rg[0]) return '';
+  if (isComplete(rg, gran)) return `celý ${GRAN_NOUN[gran]}`;
+  return gran === 'day' ? `do ${pad(rg[1].getHours())}:${pad(rg[1].getMinutes())}` : `do ${czShort(new Date(+rg[1] - 1))}`;
+}
+
+const NOUN_NOW = { day: 'dnes', week: 'tento týden', month: 'tento měsíc', year: 'letos' };
+
+// recorder/statistics_during_period for several statistic ids in one call: id -> [{start, end, change, mean}].
+export async function fetchStats(hass, ids, start, end, period, types = ['change', 'mean']) {
+  const res = await hass.callWS({
+    type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: ids, period, types,
+  });
+  return Object.fromEntries(ids.map((id) => [id, (res?.[id] ?? []).map((x) => ({
+    start: new Date(x.start), end: x.end == null ? null : new Date(x.end), change: num(x.change) ?? 0, mean: num(x.mean), p: period,
+  })).filter((r) => !Number.isNaN(+r.start))]));
+}
+
+export const statIds = (cfg) => ({
+  boiler: eid(cfg, 'sensor', 'heating_stats_boiler_total'), windowBoiler: eid(cfg, 'sensor', 'heating_stats_window_boiler_total'),
+  windowValves: eid(cfg, 'sensor', 'heating_stats_window_valves_total'), outdoor: eid(cfg, 'sensor', 'heating_outdoor_temperature'),
+});
+
+// The current range and the selected comparison (whole; analyzeStats cuts it like-for-like): {cur, cmp} = {boiler, windowBoiler, windowValves, outdoor} rows.
+// For the current month / year the day / month row at the cut is partial: `tail` = hourly rows of just that span, for both sides.
+export async function fetchStatsSet(hass, cfg, s, real) {
+  const a = anchor(real, s.gran, s.offset);
+  const r = ranges(s.offset ? a : hourFloor(a), s.gran);
+  const ids = statIds(cfg), list = Object.values(ids), period = PERIOD[s.gran];
+  const shape = (res) => Object.fromEntries(Object.entries(ids).map(([k, id]) => [k, res[id]]));
+  const cr = r[s.cmp];
+  const tailSpan = (cut) => {
+    if (s.offset || !cut || (s.gran !== 'month' && s.gran !== 'year')) return null;
+    const from = s.gran === 'month' ? new Date(cut.getFullYear(), cut.getMonth(), cut.getDate()) : new Date(cut.getFullYear(), cut.getMonth(), 1);
+    return +from < +cut ? [from, cut] : null;
+  };
+  const tail = (span) => (span ? fetchStats(hass, list, span[0], span[1], 'hour') : Promise.resolve(null));
+  const [cur, cmp, curTail, cmpTail] = await Promise.all([
+    fetchStats(hass, list, r.cur[0], new Date(+r.cur[1] + (s.offset ? 1 : 0)), period),
+    cr ? fetchStats(hass, list, cr[0], periodEnd(s.gran, cr[0]), period) : Promise.resolve(null),
+    tail(tailSpan(r.cur[1])), tail(cr && tailSpan(cr[1])),
+  ]);
+  const side = (res, tl) => ({ ...shape(res), tail: tl && shape(tl) });
+  return { cur: side(cur, curTail), cmp: cmp && side(cmp, cmpTail) };
+}
+
+const signed = (n, d) => (Number(n.toFixed(d)) === 0 ? fmt(0, d) : (n < 0 ? '−' : '+') + fmt(Math.abs(n), d));
+const hours = (n) => (n == null ? '—' : `${fmt(n, 1)} h`);
+const niceMax = (v) => {
+  if (!(v > 0)) return 1;
+  const p = 10 ** Math.floor(Math.log10(v));
+  return p * ([1, 1.5, 2, 3, 4, 5, 6, 8, 10].find((s) => s >= v / p - 1e-9) ?? 10);
+};
+const axisNum = (x) => fmt(x, Number.isInteger(x) ? 0 : 1);
+const delta = (up, text) => `<span class="delta ${up ? 'up' : 'down'}">${text}</span>`;
+const capt = (label, text) => (text == null ? '' : `${esc(label)}${/[\d.]$/.test(label) ? ': ' : ' '}${text}`);
+const tile = (label, value, caption) => `<div class="vd-tile"><div class="lbl">${esc(label)}</div><div class="fv">${value}</div><div class="cap">${caption || '&nbsp;'}</div></div>`;
+const statMsg = (text) => `<div class="chart-msg">${esc(text)}</div>`;
+
+const xLabels = (gran, n) => (gran === 'day' ? [0, 6, 12, 18, 24].map((h) => [(h / 24) * 100, String(h)])
+  : gran === 'week' ? WEEKDAYS.map((t, i) => [((i + 0.5) / 7) * 100, t])
+    : gran === 'month' ? [1, 5, 10, 15, 20, 25, n].map((d) => [((d - 0.5) / n) * 100, String(d)])
+      : ROMAN.map((t, i) => [((i + 0.5) / 12) * 100, t]));
+
+// Paired bars (current colour vs grey), optionally the outdoor line on a right axis.
+function statChart(o) {
+  const H = 134;
+  const n = o.cur.length;
+  const bars = o.cur.map((b, i) => `<div class="bk"><i style="height:${(Math.min(1, b.v / o.max) * H).toFixed(1)}px;background:${o.color}"></i><i style="height:${(Math.min(1, (o.prev[i]?.v ?? 0) / o.max) * H).toFixed(1)}px;background:var(--st-prev)"></i></div>`).join('');
+  let line = '', right = '';
+  if (o.outdoor) {
+    const ts = o.cur.map((b) => b.t).filter((t) => t != null);
+    const lo = Math.min(0, Math.floor(Math.min(...ts, 0) / 5) * 5), hi = Math.max(lo + 5, Math.ceil(Math.max(...ts, 0) / 5) * 5);
+    const pts = o.cur.flatMap((b, i) => (b.t == null ? [] : [`${(((i + 0.5) / n) * 240).toFixed(1)},${(140 - ((b.t - lo) / (hi - lo)) * H).toFixed(1)}`]));
+    if (pts.length > 1) line = `<svg viewBox="0 0 240 140" preserveAspectRatio="none" width="100%" height="140" aria-hidden="true"><polyline points="${pts.join(' ')}" fill="none" stroke="var(--c-accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"></polyline></svg>`;
+    right = `<div class="yl r">${[hi, (hi + lo) / 2, lo].map((x) => `<span>${axisNum(x)}°</span>`).join('')}</div>`;
+  }
+  return `<figure class="st-chart" aria-label="${esc(o.aria)}">
+    <div class="plot"><div class="yl">${[o.max, o.max / 2, 0].map((x) => `<span>${axisNum(x)}</span>`).join('')}</div>
+      <div class="area"><div class="mid"></div><div class="bars">${bars}</div>${line}</div>${right}</div>
+    <div class="xl${o.outdoor ? ' r' : ''}">${xLabels(o.gran, n).map(([x, t]) => `<span style="left:${x.toFixed(2)}%">${t}</span>`).join('')}</div>
+    <figcaption><span><i class="sq" style="background:${o.color}"></i>${esc(o.legend)}</span><span><i class="sq" style="background:var(--st-prev)"></i>${esc(o.prevLegend)}</span>${o.outdoor ? `<span><i class="ln"></i>${esc(o.outdoorLegend)}</span>` : ''}</figcaption>
+  </figure>`;
+}
+
+const heroHtml = (label, value, sideLabel, sideValue) => `<div class="st-hero">
+    <div><div class="lbl">${esc(label)}</div><div class="num"><span class="hero">${value}</span> <span class="unit">h</span></div></div>
+    <div class="st-side"><div class="lbl">${esc(sideLabel)}</div><div class="sv">${sideValue}</div></div>
+  </div>`;
+
+// The sentence under the delta chips: was it colder, and did the boiler run less per degree day.
+export function explainText(a, subject, cmpLabel) {
+  const c = a.cur, p = a.cmp, nd = a.normDelta;
+  if (!p || nd == null || c.outdoorMean == null || p.outdoorMean == null) return '';
+  const n = Math.round(Math.abs(nd));
+  const eff = n === 0 ? 'Na 1 °C zimy kotel běžel stejně dlouho.'
+    : nd < 0 ? `Na 1 °C zimy kotel běžel o ${n} % méně – topení je úspornější, ne horší.` : `Na 1 °C zimy kotel běžel o ${n} % více – topení je méně úsporné.`;
+  return `${subject} ${c.outdoorMean < p.outdoorMean ? 'bylo chladněji' : 'bylo tepleji'} (Ø ${fmt(c.outdoorMean, 1)} °C, ${cmpLabel} ${fmt(p.outdoorMean, 1)} °C). ${eff}`;
+}
+
+// v = {title, st, data (null = loading, 'none' = failed, {cur, cmp}), real}
+const STATS_BODY = {
+  boiler(v, a, c) {
+    const { st } = v, cur = a.cur, p = a.cmp;
+    const chips = [];
+    if (p) {
+      const up = a.diff >= 0, arrow = up ? '▲' : '▼';
+      chips.push(delta(up, a.delta == null ? `${arrow} ${signed(a.diff, 1)} h` : `${arrow} ${signed(a.delta, 0)} % (${signed(a.diff, 1)} h)`));
+      if (st.norm && a.normDelta != null) chips.push(delta(a.normDelta >= 0, `${a.normDelta >= 0 ? '▲' : '▼'} ${signed(a.normDelta, 0)} % na denostupeň`));
+    }
+    const text = st.norm ? explainText(a, c.subject, c.cmpLabel) : '';
+    const n = Math.max(bucketCount(st.gran, a.r.cur[0]), a.r[st.cmp] ? bucketCount(st.gran, a.r[st.cmp][0]) : 0);
+    const bars = statBars(st.gran, a.rows.cur.boiler, n, a.rows.cur.outdoor);
+    const prev = statBars(st.gran, a.rows.cmp.boiler, n);
+    const high = Math.max(...bars.map((b) => b.v), ...prev.map((b) => b.v));
+    const max = st.gran === 'day' && high <= 60 ? 60 : niceMax(high); // a DST day has a 25th hour: the axis grows with it
+    const unitHint = { day: 'min za hodinu', week: 'h za den', month: 'h za den', year: 'h za měsíc' }[st.gran];
+    return `<div class="fld soft"><div class="fl"><div class="t">Přepočítat na venkovní teplotu</div><div class="help">Srovnání na denostupeň: chladnější ${st.gran === 'day' ? 'den' : 'období'} smí topit víc.</div></div>
+      <button class="sw${st.norm ? ' on' : ''}" role="switch" aria-checked="${st.norm}" aria-label="Přepočítat na venkovní teplotu" data-act="norm" data-k="norm"></button></div>
+    ${heroHtml(`Kotel běžel ${c.noun}${c.span ? ` · ${c.span}` : ''}`, fmt(cur.boiler, 1), `${cap(c.cmpLabel)}${c.cmpSpan ? ` ${c.cmpSpan}` : ''}`, hours(p?.boiler))}
+    ${chips.length ? `<div class="chips tight">${chips.join('')}</div>` : ''}
+    ${text ? `<div class="help tight">${esc(text)}</div>` : ''}
+    ${statChart({ gran: st.gran, cur: bars, prev, max, color: 'var(--hfb-heat, #E8592C)', outdoor: true, aria: 'Doba běhu kotle a venkovní teplota', legend: `${cap(c.noun)} (${unitHint})`, prevLegend: cap(c.cmpLabel), outdoorLegend: `Venku ${c.noun}` })}
+    <div class="vd-facts">
+      ${tile('Ø venku', cur.outdoorMean == null ? '—' : `${fmt(cur.outdoorMean, 1)} °C`, p && capt(c.cmpLabel, p.outdoorMean == null ? '—' : `${fmt(p.outdoorMean, 1)} °C`))}
+      ${tile('Denostupně', fmt(cur.hdd, 1), p && capt(c.cmpLabel, fmt(p.hdd, 1)))}
+      ${tile('Na denostupeň', cur.perHdd == null ? '—' : `${fmt(cur.perHdd, 2)} h`, p && capt(c.cmpLabel, p.perHdd == null ? '—' : `${fmt(p.perHdd, 2)} h`))}
+      ${tile('Okna ušetřila', hours(cur.windowBoiler), p && capt(c.cmpLabel, hours(p.windowBoiler)))}
+    </div>
+    <div class="help">Denostupně = 18 °C − Ø venkovní teplota (teplejší den = 0). Porovnává se stejný úsek ${st.gran === 'day' ? 'dne' : 'období'}.</div>`;
+  },
+  windows(v, a, c) {
+    const { st } = v, cur = a.cur, p = a.cmp;
+    const diff = p ? cur.windowBoiler - p.windowBoiler : null;
+    const n = Math.max(bucketCount(st.gran, a.r.cur[0]), a.r[st.cmp] ? bucketCount(st.gran, a.r[st.cmp][0]) : 0);
+    const bars = statBars(st.gran, a.rows.cur.windowValves, n, [], false);
+    const prev = statBars(st.gran, a.rows.cmp.windowValves, n, [], false);
+    const share = cur.boiler > 0 ? `${fmt(Math.round((cur.windowBoiler / cur.boiler) * 100))} % běhu` : '';
+    return `${heroHtml(`Kotel stál kvůli oknům · ${c.noun}`, fmt(cur.windowBoiler, 1), cap(c.cmpLabel), hours(p?.windowBoiler))}
+    ${p ? `<div class="chips tight">${delta(diff < 0, `${diff >= 0 ? '▲' : '▼'} ${signed(diff, 1)} h ušetřeno`)}</div>` : ''}
+    <div class="help tight">Čas, kdy by kotel topil, ale jediná hlavice, která o teplo žádala, měla otevřené okno.</div>
+    ${statChart({ gran: st.gran, cur: bars, prev, max: niceMax(Math.max(...bars.map((b) => b.v), ...prev.map((b) => b.v))), color: 'var(--info-color, #0a84ff)', aria: 'Hodiny, kdy otevřené okno drželo hlavice zavřené', legend: `Hlavice zavřené oknem (${c.noun})`, prevLegend: cap(c.cmpLabel) })}
+    <div class="vd-facts">
+      ${tile('Hlavice-hodiny bez topení', hours(cur.windowValves), p && capt(c.cmpLabel, hours(p.windowValves)))}
+      ${tile('Kotel ušetřil', hours(cur.windowBoiler), share)}
+    </div>
+    <div class="help">Hlavice-hodiny = součet hodin, kdy otevřené okno držela hlavici zavřenou (2 hlavice hodinu = 2 h). Po místnostech zatím ne – potřebovalo by to nový senzor.</div>`;
+  },
+};
+
+export function statsParts(v) {
+  const { st } = v;
+  const now = anchor(v.real, st.gran, st.offset);
+  const labels = chipLabels(now, st.gran, st.offset, v.real);
+  const pick = (act, items, on) => items.map(([val, html]) => `<button data-act="${act}" data-val="${val}" data-k="${act}:${val}" aria-pressed="${on === val}"${on === val ? ' class="on"' : ''}>${html}</button>`).join('');
+  const nav = (d, path, label, off) => `<button class="x nav" data-act="nav" data-d="${d}" data-k="nav:${d}" aria-label="${label} ${GRAN_NOUN[st.gran]}"${off ? ' disabled' : ''}>${stroke(path, 20)}</button>`;
+  const controls = `<div class="seg two" role="group" aria-label="Metrika">${pick('metric', [['boiler', `${svg(ICON.fire, 16)}Kotel`], ['windows', `${svg(ICON.window, 16)}Okna`]], st.metric)}</div>
+  <div class="st-row"><div class="seg gran" role="group" aria-label="Období">${pick('gran', GRANULARITIES.map((g) => [g, GRAN_LABEL[g]]), st.gran)}</div><span class="grow"></span>
+    ${nav(-1, 'M15 6l-6 6 6 6', 'Předchozí', false)}<div class="st-lbl">${esc(rangeLabel(now, st.gran, st.offset, v.real))}</div>${nav(1, 'M9 6l6 6-6 6', 'Další', st.offset >= 0)}</div>
+  <div class="chips"><span class="lbl">Srovnat s</span>${COMPARE[st.gran].map((k) => `<button class="chip cmp${st.cmp === k ? ' on' : ''}" data-act="cmp" data-val="${k}" data-k="cmp:${k}" aria-pressed="${st.cmp === k}">${esc(labels[k])}</button>`).join('')}</div>`;
+  let main;
+  if (v.data == null) main = statMsg('Načítám…');
+  else if (v.data === 'none') main = statMsg('Statistiky nejsou k dispozici.');
+  else {
+    const a = analyzeStats(st.gran, st.cmp, now, v.data.cur, v.data.cmp);
+    if (!a.cur) main = statMsg('Zatím tu nejsou žádná data.');
+    else {
+      const cmpLabel = labels[st.cmp];
+      main = STATS_BODY[st.metric](v, a, {
+        noun: st.offset ? lower(rangeLabel(now, st.gran, st.offset, v.real)) : NOUN_NOW[st.gran], subject: st.offset ? 'Tehdy' : cap(NOUN_NOW[st.gran]),
+        span: spanText(a.r.cur, st.gran), cmpLabel, cmpSpan: a.r[st.cmp] ? spanText(a.r[st.cmp], st.gran) : '',
+      });
+    }
+  }
+  return { head: dialogHead('heat', ICON.chartBar, 'Statistiky', v.title), body: `${controls}\n  ${main}` };
+}
+
+export const statsHtml = (v) => { const p = statsParts(v); return p.head + p.body; };
+
 // Generic dialogs by kind: the entity ids a dialog reads (a hass update re-renders it only when one changed)
-// and its {head, body}. #447 adds `stats` here.
+// and its {head, body}.
 const DIALOGS = {
   program: {
     label: 'Program',
@@ -900,6 +1310,12 @@ const DIALOGS = {
       return [...per[tab], e('binary_sensor', 'heating_state')].filter(Boolean);
     },
     parts: (hass, cfg, ctx) => settingsParts(settingsView(hass, cfg, ctx.tab, ctx)),
+  },
+  stats: {
+    label: 'Statistiky',
+    // everything else (selection, fetched rows) is in ctx and re-renders explicitly; hass only brings the title
+    ids: (hass, cfg) => [eid(cfg, 'binary_sensor', 'heating_state')],
+    parts: (hass, cfg, ctx) => statsParts({ title: circuitTitle(hass, cfg), st: ctx.st, data: ctx.sdata, real: new Date() }),
   },
 };
 
@@ -1034,6 +1450,35 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .phase .cap { display: flex; justify-content: space-between; font-size: 11px; color: var(--c-text2); margin: 0; }
 .ws .open { color: var(--info-color, #0a84ff); font-weight: 600; } .cnt { font-size: 12px; font-weight: 600; color: var(--c-text2); }
 .vd-tile .li { display: inline-flex; vertical-align: -3px; margin-right: 4px; color: #607D8B; } .fv.s { font-size: 14px; }
+/* statistics dialog (V6-Stats*) */
+.seg.gran { grid-template-columns: repeat(4, auto); flex: none; } .seg.gran button { padding: 0 10px; }
+.st-row { display: flex; align-items: center; gap: 6px; } .grow { flex: 1; }
+.st-row .x { width: 32px; height: 40px; border-radius: 12px; } .x:disabled { opacity: .35; cursor: default; }
+.st-lbl { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .chips.tight, .help.tight { margin-top: -6px; } .help.tight { margin-top: -4px; }
+.chips .lbl { margin-right: 2px; }
+.chip.cmp { height: 28px; padding: 0 10px; border: 0; border-radius: 14px; background: var(--c-fill); color: var(--c-text2); }
+.chip.cmp.on { background: var(--hfb-btn-primary-bg, var(--primary-text-color, #1c2128)); color: var(--hfb-btn-primary-color, var(--card-background-color, #fff)); }
+.delta { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 13px; font-size: 12px; font-weight: 600; }
+.delta.up { background: var(--hfb-delta-up-bg, color-mix(in srgb, var(--warning-color, #b45309) 12%, transparent)); color: var(--hfb-delta-up-color, var(--warning-color, #b45309)); }
+.delta.down { background: var(--hfb-delta-down-bg, color-mix(in srgb, var(--success-color, #1e7a46) 12%, transparent)); color: var(--hfb-delta-down-color, var(--success-color, #1e7a46)); }
+.st-hero { display: flex; align-items: flex-end; gap: 24px; } .st-hero .lbl { font-size: 12px; } .st-hero .num { font-variant-numeric: tabular-nums; }
+.st-side { padding-bottom: 8px; } .st-side .sv { font-size: 18px; font-weight: 600; color: var(--c-text2); font-variant-numeric: tabular-nums; }
+.st-chart { margin: 0; --st-prev: color-mix(in srgb, var(--c-text2) 35%, transparent); }
+.st-chart .plot { display: flex; gap: 6px; }
+.st-chart .yl { display: flex; flex-direction: column; justify-content: space-between; height: 140px; width: 24px; font-size: 11px; color: var(--c-text2); text-align: right; }
+.st-chart .yl.r { width: 26px; text-align: left; color: var(--c-accent); }
+.st-chart .area { flex: 1; position: relative; height: 140px; }
+.st-chart .mid { position: absolute; left: 0; right: 0; top: 70px; border-top: 1px dashed var(--c-border); }
+.st-chart .bars { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--c-border); }
+.st-chart .bk { flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: 1px; height: 100%; } .st-chart .bk i { flex: 1; min-width: 0; border-radius: 2px 2px 0 0; }
+.st-chart svg { position: absolute; inset: 0; overflow: visible; display: block; }
+.st-chart .xl { position: relative; height: 16px; margin: 6px 0 0 30px; font-size: 11px; color: var(--c-text2); } .st-chart .xl.r { margin-right: 32px; }
+.st-chart .xl span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.st-chart figcaption { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--c-text2); }
+.st-chart .sq { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.st-chart .ln { display: inline-block; width: 14px; height: 2px; margin-right: 6px; vertical-align: 3px; background: var(--c-accent); }
+.vd-facts .fv { font-weight: 700; }
 @media (max-width: 599px) {
   dialog.vd { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 24px 24px 0 0; max-height: 92vh; }
 }
@@ -1056,10 +1501,12 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     this._vdlg = this.shadowRoot.querySelector('dialog.vd:not(.gd)');
     this._gdlg = this.shadowRoot.querySelector('dialog.gd');
     this._gd = null; // the generic dialog's kind (a DIALOGS key) while it is open
-    this._gdCtx = { calendars: [], pending: null, nums: {}, sources: [], tab: 'rule' };
+    this._gdCtx = { calendars: [], pending: null, nums: {}, sources: [], tab: 'rule', st: null, sdata: null, skey: null, scache: {} };
     this._vd = null; // the valve whose dialog is open
     this._chart = null; // chartModel() result, 'none' or null (loading)
     this._seq = 0; // drops stale history responses
+    this._sseq = 0; // drops stale statistics responses
+    this._st = { metric: 'boiler', gran: 'day', offset: 0, cmp: 'prev', norm: true }; // the statistics dialog's selection; `norm` outlives the dialog
     const root = this.shadowRoot;
     root.addEventListener('click', (e) => this._onClick(e));
     root.addEventListener('pointerdown', (e) => this._down(e));
@@ -1097,7 +1544,11 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
       if (sel.dataset.act === 'calendar') this._call('input_text', 'set_value', { entity_id: eid(this._cfg, ...HOLIDAY_ID), value: sel.value });
       else this._pick(sel.dataset.id, sel.value);
     });
-    this._dlg.addEventListener('close', () => { this._dlg.replaceChildren(); this._sched = null; });
+    this._dlg.addEventListener('close', () => {
+      if (this._dlg.open) return; // reopened before this (queued) event ran: it must not wipe the new content
+      this._dlg.replaceChildren();
+      this._sched = null;
+    });
     // a click outside the sheet's box closes it (padding and gaps are inside the box)
     for (const dlg of [this._dlg, this._vdlg, this._gdlg]) {
       dlg.addEventListener('click', (e) => {
@@ -1119,6 +1570,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
       if (this._gdlg.open) return;
       clearInterval(this._gt);
       clearTimeout(this._gpt);
+      this._sseq++;
       this._gd = null;
       this._gdSeen = null;
       this._gdDirty = false;
@@ -1137,6 +1589,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     clearTimeout(this._tap?.timer);
     this._tap = null;
     this._seq++;
+    this._sseq++;
     if (this._vdlg.open) this._vdlg.close();
     if (this._gdlg.open) this._gdlg.close();
     if (this._dlg.open) this._dlg.close();
@@ -1274,15 +1727,55 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     // the calendar.* ids and the outdoor temperature sources are resolved once; the dialog re-reads only their states
     this._gdCtx = {
       calendars: Object.keys(this._hass.states ?? {}).filter((id) => id.startsWith('calendar.')), pending: null,
-      nums: {}, sources: outdoorSources(this._hass), tab: 'rule',
+      nums: {}, sources: outdoorSources(this._hass), tab: 'rule', st: this._st, sdata: null, skey: null, scache: {},
     };
+    if (kind === 'stats') Object.assign(this._st, { metric: 'boiler', gran: 'day', offset: 0, cmp: 'prev' }); // `norm` is kept
     this._gdlg.setAttribute('aria-label', DIALOGS[kind].label);
     clearInterval(this._gt);
-    this._gt = setInterval(() => this._refreshGeneric(true), 60000); // "dnes" / "včera" roll over at midnight
+    let n = 0; // every minute: "dnes" / "včera" roll over at midnight; every 5th: the statistics of the current period
+    this._gt = setInterval(() => {
+      if (kind !== 'stats') this._refreshGeneric(true);
+      else if (this._gdCtx.skey && this._statKey() !== this._gdCtx.skey) this._loadStats(); // midnight: another day / week / month
+      else if (++n % 5 === 0 && !this._st.offset) this._loadStats(true);
+      else this._refreshGeneric(true);
+    }, 60000);
     for (const k of Object.keys(this._last)) if (k.startsWith('gd:')) delete this._last[k];
     this._gdlg.replaceChildren();
     if (!this._gdlg.open) this._gdlg.showModal();
     this._refreshGeneric(true, true);
+    if (kind === 'stats') this._loadStats();
+  }
+
+  // Cache key of the selection: the period's resolved start (so a new day / week is a new key), not its offset.
+  _statKey() {
+    const s = this._st;
+    return `${s.gran}|${+ranges(anchor(new Date(), s.gran, s.offset), s.gran).cur[0]}|${s.cmp}`;
+  }
+
+  // The statistics of the selected period and comparison (cached per selection; what was fetched while the period was
+  // still running for 5 minutes). `force` = a background refresh: it keeps the numbers on screen, also when it fails.
+  async _loadStats(force = false) {
+    const ctx = this._gdCtx, s = { ...this._st };
+    const key = this._statKey();
+    const hit = ctx.scache[key];
+    if (!force) {
+      const fresh = hit && (hit.final || Date.now() - hit.at < STATS_TTL);
+      ctx.sdata = fresh ? hit.data : null;
+      ctx.skey = fresh ? key : null;
+      this._refreshGeneric(true);
+      if (fresh) { this._sseq++; return; }
+    }
+    const seq = ++this._sseq;
+    let data = null;
+    try {
+      data = await fetchStatsSet(this._hass, this._cfg, s, new Date());
+      ctx.scache[key] = { at: Date.now(), data, final: !!s.offset };
+    } catch (e) { /* see below */ }
+    if (seq !== this._sseq || ctx !== this._gdCtx || this._gd !== 'stats') return;
+    if (!data && force && ctx.sdata && ctx.sdata !== 'none') return; // a failed refresh leaves the numbers
+    ctx.sdata = data ?? 'none';
+    ctx.skey = data ? key : null;
+    this._refreshGeneric(true);
   }
 
   _openValve(climate) {
@@ -1357,6 +1850,17 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     else if (act === 'close') this._vdlg.close();
     else if (act === 'gclose') this._gdlg.close();
     else if (act === 'open') this._openDialog(b.dataset.val);
+    else if (act === 'norm') { this._st.norm = !this._st.norm; this._refreshGeneric(true); }
+    else if (act === 'metric') { this._st.metric = b.dataset.val; this._refreshGeneric(true); }
+    else if (act === 'gran' || act === 'nav' || act === 'cmp') {
+      const s = this._st;
+      if (act === 'gran') s.gran = b.dataset.val;
+      else if (act === 'nav') s.offset = Math.min(0, s.offset + Number(b.dataset.d));
+      else s.cmp = b.dataset.val;
+      if (!COMPARE[s.gran].includes(s.cmp)) s.cmp = 'prev';
+      if (act === 'gran') s.offset = 0;
+      this._loadStats();
+    }
     else if (act === 'program') {
       // quick taps: the pending program counts as current until hass reports it (or PENDING_MS)
       const pp = this._gdCtx.pending;

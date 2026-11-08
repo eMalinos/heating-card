@@ -79,8 +79,43 @@
   set(`sensor.heating_low_batteries_${C}`, '3', { list_low: [{ name: 'Šatna', source: 'valve', state: 14, climates: [ids.dressing] }, { name: 'Okno balkon', source: 'window', state: 8, climates: [ids.dressing] }] });
   sensor(`input_number.heating_window_reminder_${C}`, '30');
   const wsCalls = [];
+  // recorder/statistics_during_period (statistics dialog): hourly rows of the fixture days (2026-11-07 whole, 2026-11-08 up to 20:00),
+  // 0.25 h of boiler and 5 °C for every other hour before "now"; coarser periods are summed / averaged from the hours
+  const FIXED = new Date(2026, 10, 8, 21, 37); // the statistics checks and shots run at this moment (see freezeDate)
+  const scale = (a, total) => a.map((x) => x / a.reduce((s, y) => s + y, 0) * total);
+  const FIX = {
+    '2026-11-8': { boiler: scale([28, 30, 34, 36, 40, 44, 52, 38, 20, 12, 8, 6, 4, 6, 10, 14, 22, 30, 32, 26, 22], 6.2),
+      temp: [3.2, 3.0, 2.7, 2.5, 2.3, 2.2, 2.4, 2.9, 3.8, 4.9, 5.8, 6.4, 6.9, 7.1, 6.8, 6.1, 5.2, 4.4, 3.9, 3.6, 3.4],
+      wb: { 7: 0.4 }, wv: { 6: 0.2, 7: 0.4, 8: 0.2, 12: 0.2, 17: 0.4, 18: 0.2 } },
+    '2026-11-7': { boiler: scale([20, 22, 26, 28, 30, 34, 44, 30, 14, 8, 4, 2, 2, 4, 6, 10, 18, 24, 26, 22, 18, 16, 20, 22], 6.5),
+      temp: [5.4, 5.2, 4.9, 4.7, 4.5, 4.4, 4.6, 5.1, 6.0, 7.1, 8.0, 8.6, 9.1, 9.3, 9.0, 8.3, 7.4, 6.6, 6.1, 5.8, 5.6, 5.5, 5.4, 5.3],
+      wb: { 7: 0.2 }, wv: { 6: 0.3, 7: 0.2, 17: 0.2, 18: 0.2 } },
+  };
+  const recorder = (msg) => {
+    const from = new Date(msg.start_time), to = new Date(Math.min(+new Date(msg.end_time), +new Date(FIXED.getFullYear(), FIXED.getMonth(), FIXED.getDate(), FIXED.getHours())));
+    const out = {};
+    for (const id of msg.statistic_ids) {
+      const hours = [];
+      for (let h = new Date(+from); h < to; h = new Date(+h + 3600000)) {
+        const f = FIX[`${h.getFullYear()}-${h.getMonth() + 1}-${h.getDate()}`], i = h.getHours();
+        const v = id.includes('window_boiler') ? (f ? f.wb[i] ?? 0 : 0) : id.includes('window_valves') ? (f ? f.wv[i] ?? 0 : 0)
+          : id.includes('stats_boiler') ? (f ? f.boiler[i] ?? 0 : 0.25) : (f ? f.temp[i] ?? 5 : 5);
+        hours.push({ start: +h, end: +h + 3600000, ...(id.includes('outdoor_temperature') ? { mean: v } : { change: v }) });
+      }
+      if (msg.period === 'hour') { out[id] = hours; continue; }
+      const groups = new Map();
+      for (const x of hours) {
+        const d = new Date(x.start), key = msg.period === 'day' ? new Date(d.getFullYear(), d.getMonth(), d.getDate()) : new Date(d.getFullYear(), d.getMonth(), 1);
+        const g = groups.get(+key) ?? { start: +key, end: +(msg.period === 'day' ? new Date(key.getFullYear(), key.getMonth(), key.getDate() + 1) : new Date(key.getFullYear(), key.getMonth() + 1, 1)), n: 0, sum: 0 };
+        g.n++; g.sum += x.change ?? x.mean; groups.set(+key, g);
+      }
+      out[id] = [...groups.values()].map((g) => ({ start: g.start, end: g.end, ...(id.includes('outdoor_temperature') ? { mean: g.sum / g.n } : { change: g.sum }) }));
+    }
+    return out;
+  };
   const callWS = async (msg) => {
     wsCalls.push(msg);
+    if (msg.type === 'recorder/statistics_during_period') return recorder(msg);
     const end = Date.now(), h = (n) => (end - n * 3600000) / 1000;
     return Object.fromEntries(msg.entity_ids.map((id) => [id, id.startsWith('climate.')
       ? [{ lu: h(24), a: { current_temperature: 19, temperature: 18 } }, { lu: h(10), a: { current_temperature: 20.5, temperature: 21 } }, { lu: h(1), a: { current_temperature: 19.6 } }]
@@ -122,6 +157,16 @@
       [ids.kitchen]: [{ entity_id: 'binary_sensor.kuchyn', name: 'Okno kuchyň', state: 'off', open: false }] } } } } };
     await tick(); $('[data-act="open"][data-val="settings"]').click(); await tick(100);
     $(`[data-act="tab"][data-val="${q.get('sd')}"]`).click(); await tick(200);
+  }
+  // ?stats=boiler|windows opens the statistics dialog at the fixed moment (screenshots of V6-StatsBoiler / V6-StatsWindows)
+  const RealDate = Date;
+  const freezeDate = () => {
+    globalThis.Date = class extends RealDate { constructor(...a) { if (a.length) super(...a); else super(+FIXED); } static now() { return +FIXED; } };
+  };
+  if (q.get('stats')) {
+    freezeDate();
+    await tick(); $('[data-act="open"][data-val="stats"]').click(); await tick(300);
+    if (q.get('stats') === 'windows') { $('[data-act="metric"][data-val="windows"]').click(); await tick(100); }
   }
   if (q.get('shot')) { document.getElementById('out').remove(); throw 'shot'; }
 
@@ -505,6 +550,64 @@
   const host3 = card.parentNode; host3.removeChild(card); await tick();
   r.sdDisconnect = !gd.open;
   host3.appendChild(card); await tick(50);
+
+  // statistics dialog (V6-StatsBoiler / V6-StatsWindows), at 2026-11-08 21:37
+  freezeDate();
+  const sd = $('dialog.gd');
+  r.stButton = !!$('[data-p="box1"] .vd-foot .sb.primary[data-val="stats"] svg') && $('[data-p="box1"] .vd-foot').textContent.replace(/\s+/g, ' ').trim() === 'Nastavení Statistiky';
+  const nWs = wsCalls.length;
+  $('[data-act="open"][data-val="stats"]').click(); await tick(300);
+  const hero = () => sd.querySelector('.hero')?.textContent;
+  const chips = () => [...sd.querySelectorAll('.delta')].map((x) => x.textContent).join('|');
+  r.stOpen = sd.open && sd.querySelector('.vd-title').textContent === 'Statistiky' && sd.querySelector('.sub').textContent === 'Topení přízemí' && sd.getAttribute('aria-label') === 'Statistiky'
+    && sd.querySelector('.st-lbl').textContent === 'Dnes 8. 11.' && sd.querySelector('[data-act="nav"][data-d="1"]').disabled;
+  const rec = wsCalls.slice(nWs).filter((m) => m.type === 'recorder/statistics_during_period');
+  r.stFetch = rec.length === 2 && rec.every((m) => m.statistic_ids.length === 4 && m.period === 'hour') && rec[0].statistic_ids.includes(`sensor.heating_stats_boiler_total_${C}`);
+  r.stHero = hero() === '6,2' && sd.querySelector('.st-hero .lbl').textContent === 'Kotel běžel dnes · do 21:00' && sd.querySelector('.st-side .lbl').textContent === 'Včera do 21:00';
+  r.stChips = /^▲ \+\d+ % \(\+\d,\d h\)\|▼ −\d+ % na denostupeň$/.test(chips()) && sd.querySelectorAll('.st-chart .bk').length === 24 && !!sd.querySelector('.st-chart polyline');
+  r.stTiles = [...sd.querySelectorAll('.vd-tile .lbl')].map((x) => x.textContent).join() === 'Ø venku,Denostupně,Na denostupeň,Okna ušetřila';
+  // the degree-day switch (kept while the card lives)
+  sd.querySelector('[data-act="norm"]').click(); await tick();
+  r.stNormOff = sd.querySelectorAll('.delta').length === 1 && !sd.querySelector('.help.tight') && sd.querySelector('[data-act="norm"]').getAttribute('aria-checked') === 'false';
+  // metric Okna: no new fetch, the hero is the boiler time the windows saved
+  const nMetric = wsCalls.length;
+  sd.querySelector('[data-act="metric"][data-val="windows"]').click(); await tick();
+  r.stWindows = hero() === '0,4' && sd.querySelector('.st-hero .lbl').textContent === 'Kotel stál kvůli oknům · dnes' && wsCalls.length === nMetric && !sd.querySelector('.st-chart polyline')
+    && [...sd.querySelectorAll('.vd-tile .lbl')].map((x) => x.textContent).join() === 'Hlavice-hodiny bez topení,Kotel ušetřil' && /1,6 h/.test(sd.querySelector('.vd-facts').textContent);
+  // another comparison and another period fetch again; navigation goes back and ▶ enables
+  sd.querySelector('[data-act="cmp"][data-val="yoy"]').click(); await tick(100);
+  r.stCmp = sd.querySelector('.chip.on').textContent === '8. 11. 2025' && wsCalls.length > nMetric;
+  sd.querySelector('[data-act="gran"][data-val="week"]').click(); await tick(100);
+  r.stWeek = sd.querySelector('.st-lbl').textContent === '2.–8. 11.' && sd.querySelectorAll('.st-chart .bk').length === 7 && [...sd.querySelectorAll('[data-act="cmp"]')].map((b) => b.textContent).join() === 'minulý týden,týden 45/2025'
+    && sd.querySelector('.chip.on').textContent === 'týden 45/2025'; // yoy is offered for a week too, so it stays
+  sd.querySelector('[data-act="nav"][data-d="-1"]').click(); await tick(100);
+  r.stNav = sd.querySelector('.st-lbl').textContent === '26. 10.–1. 11.' && !sd.querySelector('[data-act="nav"][data-d="1"]').disabled;
+  sd.querySelector('[data-act="gran"][data-val="month"]').click(); await tick(100);
+  r.stMonth = sd.querySelector('.st-lbl').textContent === 'Listopad 2026' && sd.querySelectorAll('.st-chart .bk').length === 30 && sd.querySelector('[data-act="nav"][data-d="1"]').disabled;
+  sd.querySelector('[data-act="gran"][data-val="year"]').click(); await tick(100);
+  r.stYear = sd.querySelector('.st-lbl').textContent === '2026' && sd.querySelectorAll('.st-chart .bk').length === 12 && sd.querySelectorAll('[data-act="cmp"]').length === 1 && sd.querySelector('.chip.on').textContent === '2025' && !!sd.querySelector('.hero');
+  // a failing background refresh keeps the numbers on screen
+  card.hass = { ...hass, callWS: async () => { throw new Error('no recorder'); } };
+  await card._loadStats(true); await tick();
+  r.stRefreshKeeps = !!sd.querySelector('.hero') && !sd.querySelector('.chart-msg');
+  card.hass = hass;
+  sd.close(); await tick();
+  // reopened: the selection starts again at Den, the switch stays off; a failing call shows the note, no exception
+  card.hass = { ...hass, callWS: async () => { throw new Error('no recorder'); } }; await tick();
+  $('[data-act="open"][data-val="stats"]').click(); await tick(300);
+  r.stFail = sd.querySelector('.st-lbl').textContent === 'Dnes 8. 11.' && sd.querySelector('[data-act="norm"]') === null && sd.querySelector('.chart-msg')?.textContent === 'Statistiky nejsou k dispozici.' && !sd.querySelector('.hero');
+  sd.close(); await tick();
+  // a new install: no statistics yet = an empty-state line
+  card.hass = { ...hass, callWS: async () => ({}) }; await tick();
+  $('[data-act="open"][data-val="stats"]').click(); await tick(300);
+  r.stEmpty = sd.querySelector('.chart-msg')?.textContent === 'Zatím tu nejsou žádná data.' && !!sd.querySelector('[data-act="gran"]');
+  sd.close(); card.hass = hass; await tick();
+  // disconnect closes it
+  $('[data-act="open"][data-val="stats"]').click(); await tick(50);
+  const host4 = card.parentNode; host4.removeChild(card); await tick();
+  r.stDisconnect = !sd.open;
+  host4.appendChild(card); await tick(50);
+  globalThis.Date = RealDate;
 
   r.noErrors = errors.length === 0;
   const ok = Object.values(r).every(Boolean);
