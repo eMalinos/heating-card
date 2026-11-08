@@ -7,12 +7,12 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.1';
+const VERSION = '0.1.2';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
 const DOUBLE_MS = 250;
-const STEP = 0.5;
+const STEP = 0.5; // a valve without target_temp_step
 
 // MDI paths (@mdi/js 7.4.47), copied so the card has no dependency.
 const ICON = {
@@ -124,7 +124,7 @@ export function valveView(hass, cfg, climate) {
   }
   return {
     climate, name: attrs.friendly_name || climate.split('.')[1], phase, word, state, now, target: num(attrs.temperature),
-    min: num(attrs.min_temp) ?? 5, max: num(attrs.max_temp) ?? 30,
+    min: num(attrs.min_temp) ?? 5, max: num(attrs.max_temp) ?? 30, step: num(attrs.target_temp_step) ?? STEP,
     off: phase === 'window' || phase === 'off', lowBattery,
   };
 }
@@ -176,7 +176,7 @@ export function circuitView(hass, cfg) {
   const programName = programLabel(hass, cfg, programId(hass, cfg));
   return {
     title: circuitTitle(hass, cfg),
-    boilerOn, subtitle, demand, mode, hint, status, programName,
+    boilerOn, subtitle, demand, mode, hint, status, programName, rule: st(hass, e('input_select', 'heating_auto_rule')) === 'time' ? 'time' : 'weather',
     offSchedule: num(st(hass, e('sensor', 'heating_off_schedule'))) ?? 0,
     applying: applyingState(hass, cfg),
     outdoor: num(st(hass, e('sensor', 'heating_outdoor_temperature'))),
@@ -258,12 +258,16 @@ export function valveDetail(hass, cfg, climate, now = Date.now(), ids = deviceEn
   };
 }
 
+// BLE RSSI of the valve at its gateway in words: ≥ −70 dBm strong, ≥ −85 OK, below weak.
+export const signalWord = (dbm) => (dbm >= -70 ? 'Silný' : dbm >= -85 ? 'OK' : 'Slabý');
+
 // 24 h chart geometry. rows = history/history_during_period rows of the climate ({a: attributes, lu: epoch s}),
-// winRows = rows of every window sensor ({s: state, lu}). Returns SVG path data + open-window spans in x units, or null without data.
+// winRows = rows of every window sensor ({s: state, lu}), phaseRows = rows of sensor.heating_valves_<circuit> ({a: {phases}, lu}).
+// Returns SVG path data, open-window / fast-start / overrun spans in x units and the y-axis ticks, or null without data.
 export const CHART = { w: 440, top: 10, bottom: 114 };
 const ts = (r) => { const t = r.lu ?? r.lc; return typeof t === 'number' ? t * 1000 : Date.parse(t); };
 // wins = [{rows, since}]: a window's history rows ({s, lu}) and, for an open window, when it opened (`since`).
-export function chartModel(rows, wins, end, hours = 24) {
+export function chartModel(rows, wins, end, hours = 24, phaseRows = [], climate = '') {
   const start = end - hours * 3600000;
   const x = (t) => Math.round(((Math.min(end, Math.max(start, t)) - start) / (end - start)) * CHART.w * 10) / 10;
   let cur = null, tgt = null;
@@ -307,7 +311,17 @@ export function chartModel(rows, wins, end, hours = 24) {
     const h = new Date(t).getHours();
     if (h % 6 === 0) labels.push({ x: x(t), text: `${h}:00` });
   }
-  return { current: line('cur', false), target: line('tgt', true), bands: merged.map(([a, b]) => ({ x: x(a), w: Math.max(2, Math.round((x(b) - x(a)) * 10) / 10) })), labels };
+  const band = ([a, b]) => ({ x: x(a), w: Math.max(2, Math.round((x(b) - x(a)) * 10) / 10) });
+  // the valve's phase spans: a phase holds until the next row of the sensor
+  const ph = (phaseRows ?? []).map((r) => ({ t: ts(r), p: r.a?.phases?.[climate]?.[0] ?? 'normal' })).filter((p) => Number.isFinite(p.t)).sort((a, b) => a.t - b.t);
+  const phaseBands = (keys) => ph.flatMap((p, i) => (keys.includes(p.p) && (ph[i + 1]?.t ?? end) > start ? [band([p.t, ph[i + 1]?.t ?? end])] : []));
+  const step = hi - lo > 6 ? 2 : 1;
+  const ticks = [];
+  for (let n = Math.ceil(lo / step) * step; n <= hi; n += step) ticks.push({ y: y(n), text: `${n}°` });
+  return {
+    current: line('cur', false), target: line('tgt', true), bands: merged.map(band), labels, ticks,
+    fast: phaseBands(['fast']), run: phaseBands(['run', 'overrun']),
+  };
 }
 
 // Gesture zones of a tile from the config: {body: {tap, double_tap, hold}, icon: {...}} -> 'schedule' | 'info'.
@@ -329,7 +343,7 @@ export const PENDING_MS = 5000;
 export function nextTarget(v, pending, dir, now = Date.now()) {
   const p = pending?.[v.climate];
   const base = p && now - p.at < PENDING_MS && p.t !== v.target ? p.t : v.target;
-  return base == null ? null : Math.round(Math.min(v.max, Math.max(v.min, base + STEP * dir)) * 10) / 10;
+  return base == null ? null : Math.round(Math.min(v.max, Math.max(v.min, base + (v.step ?? STEP) * dir)) * 100) / 100;
 }
 
 const svg = (path, size, extra = '') => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" ${extra}><path d="${path}"></path></svg>`;
@@ -379,13 +393,18 @@ const BATTERY_PLAIN = 'M16.67,4H15V2H9V4H7.33A1.33,1.33 0 0,0 6,5.33V20.67C6,21.
 
 function chartHtml(m) {
   const font = 'font-size="11" style="fill: var(--c-text2)"';
-  return `<svg viewBox="0 0 ${CHART.w} 140" width="100%" role="img" aria-label="Teplota za 24 hodin a cíl">
-  ${m.bands.map((b, i) => `<rect class="band" x="${b.x}" y="${CHART.top}" width="${b.w}" height="${CHART.bottom - CHART.top}" rx="4"></rect>${i === 0 ? `<text x="${Math.min(b.x + 6, CHART.w - 30)}" y="24" font-size="11" class="band-t">okno</text>` : ''}`).join('')}
+  const strip = (bs, cls) => bs.map((b) => `<rect class="${cls}" x="${b.x}" y="${CHART.bottom - 6}" width="${b.w}" height="6" rx="2"></rect>`).join('');
+  const legend = [m.bands.length && '<span><i class="lg win"></i>okno</span>', m.fast.length && '<span><i class="lg fast"></i>rychlý start</span>',
+    m.run.length && '<span><i class="lg run"></i>doběh</span>'].filter(Boolean).join('');
+  return `<svg viewBox="-30 0 ${CHART.w + 30} 140" width="100%" role="img" aria-label="Teplota za 24 hodin a cíl">
+  ${m.ticks.map((t) => `<line x1="0" y1="${t.y}" x2="${CHART.w}" y2="${t.y}" class="grid-l"></line><text x="-6" y="${t.y + 4}" text-anchor="end" ${font}>${t.text}</text>`).join('')}
+  ${m.bands.map((b) => `<rect class="band" x="${b.x}" y="${CHART.top}" width="${b.w}" height="${CHART.bottom - CHART.top}" rx="4"></rect>`).join('')}
   <line x1="0" y1="${CHART.bottom}" x2="${CHART.w}" y2="${CHART.bottom}" style="stroke: var(--c-border)"></line>
+  ${strip(m.fast, 'ph-fast')}${strip(m.run, 'ph-run')}
   ${m.target ? `<path d="${m.target}" fill="none" style="stroke: var(--disabled-text-color, #a9afb7)" stroke-width="2" stroke-dasharray="4 4"></path>` : ''}
   <path d="${m.current}" fill="none" stroke="#E8592C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
   ${m.labels.map((l) => `<text x="${Math.min(l.x, CHART.w - 28)}" y="132" ${font}>${l.text}</text>`).join('')}
-</svg>`;
+</svg>${legend ? `<div class="legend">${legend}</div>` : ''}`;
 }
 
 // The valve dialog in sections that are patched separately (so the buttons keep their nodes):
@@ -398,7 +417,7 @@ export function detailParts(d, chart = 'loading') {
   const alert = d.alert ? `<div class="alert ${d.alert.kind === 'window' ? 'info' : 'error'} vd-alert" role="status">${d.alert.kind === 'window' ? svg(ICON.window, 18) : svg(ICON.battery, 18, 'class="blink"')}<span><b>${esc(d.alert.title)}</b>${esc(d.alert.text)}</span></div>` : '';
   const facts = [
     ['Baterie', d.battery ? `${fmt(d.battery.value)} %` : '—', bat],
-    ['Signál brány', d.signal == null ? '—' : `${d.signal < 0 ? '−' : ''}${fmt(Math.abs(d.signal))} dBm`, false],
+    ['Signál brány', d.signal == null ? '—' : `${signalWord(d.signal)} (${d.signal < 0 ? '−' : ''}${fmt(Math.abs(d.signal))} dBm)`, d.signal < -85],
     ['Ventil', d.position == null ? '—' : `${fmt(d.position)} %`, false],
     ['Kalibrace', d.calibration === 'needed' ? 'Nutná' : d.calibration === 'ok' ? 'V pořádku' : '—', d.calibration === 'needed'],
   ];
@@ -407,8 +426,7 @@ export function detailParts(d, chart = 'loading') {
     head: headMain(`${dotCls}${dotCls === 'idle' || dotCls === 'dis' ? ' soft' : ''}`, PHASE_ICON[v.phase], v.name, d.title,
       badged ? `<span class="badge blink">${svg(ICON.battery, 12)}</span>` : ''),
     alert,
-    now: `<div><div class="sub">Teplota teď · ${esc(v.word.toLowerCase())}</div><div><b class="hero">${v.now == null ? '–' : fmt(v.now, 1)}</b> <span class="unit big">°C</span></div></div>
-    ${d.position == null ? '' : `<span class="chip">ventil ${fmt(d.position)} %</span>`}`,
+    now: `<div><div class="sub">Teplota teď · ${esc(v.word.toLowerCase())}</div><div><b class="hero">${v.now == null ? '–' : fmt(v.now, 1)}</b> <span class="unit big">°C</span></div></div>`,
     tv: `<div class="lbl">${v.phase === 'window' ? 'Cíl · platí po zavření okna' : 'Cíl'}</div><div class="tv">${fmtT(v.target)} <small>°C</small></div>`,
     chart: chart === 'loading' ? '<div class="chart-msg">Načítám historii…</div>' : chart === 'none' ? '<div class="chart-msg">Historie není k dispozici.</div>' : chartHtml(chart),
     facts: facts.map(([l, val, low]) => `<div class="vd-tile${low ? ' low' : ''}"><div class="lbl">${l}</div><div class="fv${low ? ' blink' : ''}">${esc(val)}</div></div>`).join(''),
@@ -460,7 +478,7 @@ function box1Html(c) {
   ${c.status ? `<div class="alert ${c.status.level}" role="status">${LEVEL_ICON[c.status.level]}<span>${esc(c.status.text)}</span>
     <button class="x" data-act="clear" data-k="clear" aria-label="Zavřít zprávu">${stroke('M6 6l12 12M18 6 6 18', 14)}</button></div>` : ''}
   <div class="seg" role="group" aria-label="Režim topení">
-    ${MODES.map(([val, label, icon]) => `<button data-act="mode" data-val="${val}" data-k="mode:${val}" aria-pressed="${c.mode === val}"${c.mode === val && c.hint ? ` title="${esc(c.hint)}"` : ''}${c.mode === val ? ' class="on"' : ''}>${icon}${label}</button>`).join('')}
+    ${MODES.map(([val, label, icon]) => (val === 'by_weather' && c.rule === 'time' ? [val, 'Čas', svg(ICON.clock, 15)] : [val, label, icon])).map(([val, label, icon]) => `<button data-act="mode" data-val="${val}" data-k="mode:${val}" aria-pressed="${c.mode === val}"${c.mode === val && c.hint ? ` title="${esc(c.hint)}"` : ''}${c.mode === val ? ' class="on"' : ''}>${icon}${label}</button>`).join('')}
   </div>
   <div class="soft panel">
     <div class="facts">
@@ -839,13 +857,13 @@ const SETTINGS_BODY = {
     : `<div class="pair">${v.times.map(timeHtml).join('')}</div>`}
   <div class="help">Pravidlo platí jen v režimu <b>Počasí</b>. V režimu Zapnuto kotel topí podle hlavic vždy, ve Vypnuto nikdy. Změny platí hned.</div>`,
 
-  boiler: (v) => `<div class="vd-h">Fáze hlavice u kondenzačního kotle</div>
-  <figure class="phase" aria-label="Fáze hlavice: rychlý start, topí, doběh, kontrola">
-    <div class="ph"><div class="p-fast">Rychlý start</div><div class="p-heat">Topí</div><div class="p-run">Doběh</div><div class="p-chk">Kontrola</div></div>
+  boiler: (v) => { const fastOff = v.fields.some((f) => f.off && f.id.includes('heating_fast_start_delta')); return `<div class="vd-h">Fáze hlavice u kondenzačního kotle</div>
+  <figure class="phase" aria-label="Fáze hlavice: rychlý start${fastOff ? ' (vypnutý)' : ''}, topí, doběh, kontrola">
+    <div class="ph"><div class="p-fast${fastOff ? ' is-off' : ''}">Rychlý start</div><div class="p-heat">Topí</div><div class="p-run">Doběh</div><div class="p-chk">Kontrola</div></div>
     <div class="cap"><span>pod rozvrhem</span><span>rozvrh dosažen</span><span>hlavice zavřená</span></div>
   </figure>
   ${fieldList(v.fields)}
-  <div class="help">${esc(v.now)} Změny platí hned.</div>`,
+  <div class="help">${esc(v.now)} Změny platí hned.</div>`; },
 
   windows: (v) => `${v.fields.map(fieldHtml).join('')}
   <div class="vd-h">Okenní čidla hlavic</div>
@@ -1360,7 +1378,7 @@ button.dot { border: 0; padding: 0; cursor: pointer; font: inherit; }
 .sb { height: 32px; border: 0; border-radius: 10px; background: var(--c-raised); box-shadow: var(--c-raised-sh); padding: 0 12px; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; flex: none; }
 .sb:disabled { opacity: .6; cursor: default; }
 .head2 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; } .head2 .h { font-size: 15px; font-weight: 600; }
-.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr)); gap: 8px; }
 .tile { padding: 10px 8px 8px 10px; display: flex; flex-direction: column; gap: 8px; background: var(--c-tile-bg); border: var(--c-tile-border); box-shadow: var(--c-tile-shadow); border-radius: var(--c-tile-radius); }
 .tile.hot { background: var(--hfb-hot-tile, color-mix(in srgb, #E8592C 8%, var(--secondary-background-color, #f0f2f5))); }
 .main { display: flex; align-items: center; gap: 8px; cursor: pointer; outline-offset: 2px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
@@ -1405,7 +1423,10 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .tv { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; } .tv small { font-size: 13px; font-weight: 500; color: var(--c-text2); }
 .pm.raised { background: var(--c-raised); box-shadow: var(--c-raised-sh); } .pm.raised:disabled { background: transparent; box-shadow: none; }
 .vd-chart { margin: 0; } .vd-chart svg { display: block; }
-.band { fill: color-mix(in srgb, var(--info-color, #0a84ff) var(--hfb-alert-tint, 12%), transparent); } .band-t { fill: var(--info-color, #0a84ff); }
+.band { fill: color-mix(in srgb, var(--info-color, #0a84ff) var(--hfb-alert-tint, 12%), transparent); }
+.grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; } .ph-fast { fill: #E8592C; } .ph-run { fill: #26A69A; }
+.legend { display: flex; gap: 12px; font-size: 11px; color: var(--c-text2); margin-top: 4px; } .legend span { display: inline-flex; align-items: center; gap: 4px; }
+.lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; } .lg.win { background: color-mix(in srgb, var(--info-color, #0a84ff) 30%, transparent); } .lg.fast { background: #E8592C; } .lg.run { background: #26A69A; }
 .chart-msg { font-size: 12px; color: var(--c-text2); padding: 40px 0; text-align: center; }
 .vd-h { font-size: 13px; font-weight: 600; margin-bottom: -6px; }
 .vd-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -1442,6 +1463,7 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .fields { display: flex; flex-direction: column; gap: 8px; } .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .field { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 8px 8px 8px; }
 .field.is-off .fi, .field.is-off .fl { opacity: .5; filter: grayscale(1); }
+.phase .ph > .is-off { opacity: .5; filter: grayscale(1); }
 .field.soft { background: var(--c-tile-bg); border: var(--c-tile-border); box-shadow: var(--c-tile-shadow); border-radius: var(--c-tile-radius); }
 .field .fl { flex: 1; min-width: 0; } .field .help { margin-top: 2px; }
 .fi { width: 32px; height: 32px; border-radius: 50%; background: var(--hfb-card, var(--card-background-color, #fff)); color: #607D8B; display: flex; align-items: center; justify-content: center; flex: none; align-self: flex-start; margin-top: 2px; }
@@ -1807,11 +1829,12 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     let chart = 'none';
     try {
       const wl = windowList(this._hass, this._cfg, climate);
+      const valvesId = eid(this._cfg, 'sensor', 'heating_valves');
       const res = await this._hass.callWS({
         type: 'history/history_during_period', start_time: new Date(end - 24 * 3600000).toISOString(), end_time: new Date(end).toISOString(),
-        entity_ids: [climate, ...wl.map((w) => w.entity_id)], include_start_time_state: true, significant_changes_only: false, minimal_response: false, no_attributes: false,
+        entity_ids: [climate, valvesId, ...wl.map((w) => w.entity_id)], include_start_time_state: true, significant_changes_only: false, minimal_response: false, no_attributes: false,
       });
-      chart = chartModel(res?.[climate], wl.map((w) => ({ rows: res?.[w.entity_id], since: w.open === true || w.state === 'on' ? sinceMs(w) : null })), end) ?? 'none';
+      chart = chartModel(res?.[climate], wl.map((w) => ({ rows: res?.[w.entity_id], since: w.open === true || w.state === 'on' ? sinceMs(w) : null })), end, 24, res?.[valvesId], climate) ?? 'none';
     } catch (e) { /* no history: the chart shows a note */ }
     if (seq !== this._seq || climate !== this._vd) return;
     this._chart = chart;

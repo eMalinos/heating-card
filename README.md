@@ -10,7 +10,7 @@ A Home Assistant card for one heating circuit, in the Homecraft look: a circuit 
 
 **HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/heating-card`, type **Dashboard** → download **Heating Card** → reload the browser.
 
-**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.1`, type **JavaScript module**). Change `?v=` after copying a new version.
+**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.2`, type **JavaScript module**). Change `?v=` after copying a new version.
 
 ## Configuration
 
@@ -34,11 +34,13 @@ Gestures are `tap`, `double_tap`, `hold`, `icon_tap`, `icon_double_tap`, `icon_h
 
 Entities read (`<c>` is the circuit): `switch.boiler_<c>`, `input_select.heating_mode_<c>`, `input_select.heating_auto_rule_<c>`, `input_datetime.heating_time_from_<c>` / `_to_<c>`, `input_number.heating_weather_threshold_<c>`, `input_text.heating_status_<c>`, `sensor.heating_program_<c>`, `sensor.heating_applying_<c>`, `sensor.heating_schedule_<c>`, `input_boolean.heating_week_alternation_<c>`, `input_select.heating_holidays_<c>`, `input_text.heating_holiday_calendar_<c>`, every `calendar.*`, `select.heating_program_<c>`, `sensor.heating_off_schedule_<c>`, `sensor.heating_valves_<c>`, `sensor.heating_low_batteries_<c>`, `binary_sensor.heating_active_<c>`, `binary_sensor.heating_state_<c>`, `sensor.heating_outdoor_temperature_<c>` and each valve's `climate` entity.
 
-Actions: the mode segments call `input_select.select_option`, the cross on the status message clears `input_text.heating_status_<c>`, **Srovnat** presses `input_button.heating_sync_<c>`, − / + change a valve's target by 0.5 °C (not on a valve with an open window or while the circuit is off). The **Statistiky** button opens the statistics dialog; `schedule_gesture` opens `heating-schedule-card` in a simple dialog.
+The middle mode segment reads *Čas* (clock icon) instead of *Počasí* while the rule (`input_select.heating_auto_rule_<c>`) is `time`.
+
+Actions: the mode segments call `input_select.select_option`, the cross on the status message clears `input_text.heating_status_<c>`, **Srovnat** presses `input_button.heating_sync_<c>`, − / + change a valve's target by its `target_temp_step` (0.5 °C when the valve has none; not on a valve with an open window or while the circuit is off). The **Statistiky** button opens the statistics dialog; `schedule_gesture` opens `heating-schedule-card` in a simple dialog.
 
 ## Valve dialog
 
-`info_gesture` opens the valve dialog (a bottom sheet under 600 px): the valve's icon circle (blinking battery badge when a battery is low), one alert under the header (the open window with minutes open and the reminder, else every low battery of the valve), the current temperature with the valve position, the target stepper (disabled with an open window or while the circuit is off), a 24 h chart of the room and target temperature with the open-window spans as tinted bands, the *Hlavice* tiles (battery, signal, valve position, calibration; the battery tile turns red and blinks when low), one row per window sensor (*Okna*) with its state and its own battery, and the footer: **Kalibrovat** (after a confirm, runs `script.heating_calibrate_<c>` with `climate`) and **Rozvrh** (the schedule dialog). The header's history button opens the valve's more-info. A window sensor that is `unavailable` / `unknown` shows *Čidlo nedostupné*, never *Zavřené*.
+`info_gesture` opens the valve dialog (a bottom sheet under 600 px): the valve's icon circle (blinking battery badge when a battery is low), one alert under the header (the open window with minutes open and the reminder, else every low battery of the valve), the current temperature, the target stepper (disabled with an open window or while the circuit is off), a 24 h chart of the room and target temperature (°C axis on the left) with the open-window spans as tinted bands and the valve's fast starts / overruns (`phases` of `sensor.heating_valves_<c>`) as strips on the bottom, with a legend, the *Hlavice* tiles (battery, signal in words — Silný ≥ −70 dBm, OK ≥ −85, Slabý below — with the dBm, valve position, calibration; the battery tile turns red and blinks when low), one row per window sensor (*Okna*) with its state and its own battery, and the footer: **Kalibrovat** (after a confirm, runs `script.heating_calibrate_<c>` with `climate`) and **Rozvrh** (the schedule dialog). The header's history button opens the valve's more-info. A window sensor that is `unavailable` / `unknown` shows *Čidlo nedostupné*, never *Zavřené*.
 
 Device facts (battery, signal, valve position, calibration) are found on the valve's device by device class / entity id suffix, like the Mushroom detail does; windows come from the `windows` attribute of `sensor.heating_off_schedule_<c>`; the reminder from `input_number.heating_window_reminder_<c>`; the low-battery threshold from `input_number.heating_low_battery_threshold` (30 % by default). The chart reads the history over `history/history_during_period`; without history the dialog shows a note instead.
 
@@ -101,6 +103,8 @@ python3 -m http.server 8766 &
 
 ## Changelog
 
+- **0.1.2** — valve dialog: chart with a °C axis and fast-start / overrun strips; valve position only once (tile); signal in words; ± by the valve's `target_temp_step`; valve tiles fill the card in columns of at least 160 px; mode segment *Čas* under the time rule.
+- **0.1.2** — settings Kotel: the phase strip dims *Rychlý start* while fast start is off.
 - **0.1.1** — settings that are switched off show *Vypnuto*, dimmed: fast start below 0 (one − step from 0,0; needs HFB heating 1.14.0-beta.3, whose helper goes down to −0,1), pump overrun 0 min, window reminder 0 min.
 - **0.1.0** — first release: circuit + valves boxes, valve, program, settings and statistics dialogs (Homecraft look, design rows v4–v7). Used by the HFB heating UI theme `homecraft`.
 - **0.1.0-beta.6** — statistics dialog (box 1 *Statistiky* button): Kotel (run time, degree-day normalisation, outdoor line) and Okna (boiler hours saved), Den / Týden / Měsíc / Rok with navigation and one comparison; fix: reopening the schedule dialog right after closing it no longer loses its content.

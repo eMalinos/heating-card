@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { clockText, settingsView, settingsHtml, numField, stepNum, outdoorSources, programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural } from '../dist/heating-card.js';
+import { clockText, settingsView, settingsHtml, numField, stepNum, outdoorSources, programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural, signalWord } from '../dist/heating-card.js';
 
 const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/states.json', import.meta.url), 'utf8'));
 const C = 'circuit_demo';
@@ -116,6 +116,9 @@ test('circuitView: mode hint, status, program, applying, outdoor, title', () => 
   const time = { ...bw, [`input_select.heating_auto_rule_${C}`]: { state: 'time' } };
   assert.equal(c({ ...time, [`input_datetime.heating_time_from_${C}`]: { state: '06:00:00' }, [`input_datetime.heating_time_to_${C}`]: { state: '22:30:00' } }).hint, '06:00–22:30 každý den');
   assert.equal(c({ ...time, [`input_datetime.heating_time_from_${C}`]: { state: 'unknown' } }).hint, 'nastav čas od–do');
+  assert.deepEqual([c(bw).rule, c(time).rule], ['weather', 'time']);
+  assert.match(cardHtml(world(time), CFG), />Čas</);
+  assert.match(cardHtml(world(bw), CFG), />Počasí</);
 
   const status = (s) => c({ [`input_text.heating_status_${C}`]: { state: s } }).status;
   assert.equal(status(''), null);
@@ -170,6 +173,7 @@ test('nextTarget: quick taps add up from the pending value until hass reports it
   assert.equal(nextTarget(v, p, 1, now + 5001), 21.5); // pending expired
   assert.equal(nextTarget({ ...v, target: 30 }, {}, 1), 30); // clamped
   assert.equal(nextTarget({ ...v, target: null }, {}, 1), null);
+  assert.equal(nextTarget({ ...v, step: 0.1 }, {}, 1, now), 21.1); // the valve's target_temp_step
 });
 
 test('program: unavailable sensor falls back to the select, else a dash; Czech names', () => {
@@ -322,6 +326,23 @@ test('chartModel: lines, window bands, hour labels', () => {
   assert.deepEqual(chartModel(rows, [{ rows: [], since: end - 48 * 3600000 }], end).bands, [{ x: 0, w: 440 }]);
   // an opening in the history wins when it is later than nothing else says
   assert.equal(chartModel(rows, [{ rows: [{ lu: h(24), s: 'off' }, { lu: h(12), s: 'on' }], since: end - 12 * 3600000 }], end).bands[0].x, 220);
+});
+
+test('chartModel: y ticks, fast-start and overrun strips of this valve', () => {
+  const end = Date.parse('2026-11-08T12:00:00');
+  const h = (n) => (end - n * 3600000) / 1000;
+  const rows = [{ lu: h(24), a: { current_temperature: 19, temperature: 21 } }];
+  const ph = (p) => ({ phases: { [K]: [p], 'climate.other': ['fast'] } });
+  const m = chartModel(rows, [], end, 24, [{ lu: h(30), a: ph('normal') }, { lu: h(6), a: ph('fast') }, { lu: h(3), a: ph('overrun') }, { lu: h(2), a: ph('normal') }], K);
+  assert.deepEqual(m.ticks.map((t) => t.text), ['18°', '19°', '20°', '21°', '22°']);
+  assert.deepEqual(m.fast, [{ x: 330, w: 55 }]);
+  assert.deepEqual(m.run, [{ x: 385, w: 18.3 }]);
+  assert.deepEqual(chartModel(rows, [], end).fast, []);
+  assert.match(detailHtml(detail({}), m), /rychlý start.*doběh/s);
+});
+
+test('signalWord', () => {
+  assert.deepEqual([-55, -70, -71, -85, -86].map(signalWord), ['Silný', 'Silný', 'OK', 'OK', 'Slabý']);
 });
 
 test('valveDetail: unparsable since, battery names, unknown circuit state', () => {
@@ -490,6 +511,8 @@ test('settings Kotel / Okna: the shipped off rules (fast below 0, overrun 0, rem
   assert.deepEqual([by('Rychlý start pod rozvrhem').text, by('Doběh čerpadla').text], ['Vypnuto', 'Vypnuto']);
   assert.match(by('Rychlý start pod rozvrhem').help, /Pod 0 = vypnuto/);
   assert.match(settingsHtml(kotel), /class="soft field is-off"/);
+  assert.match(settingsHtml(kotel), /class="p-fast is-off"/); // the phase strip dims fast start too
+  assert.doesNotMatch(settingsHtml(sv('boiler')), /p-fast is-off/);
   const old = sv('boiler', set('heating_fast_start_delta', 0));
   assert.equal(old.fields[0].text, '0,0');
   assert.doesNotMatch(old.fields[0].help, /Pod 0/); // helper min 0: off is out of reach

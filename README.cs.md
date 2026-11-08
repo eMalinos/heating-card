@@ -10,7 +10,7 @@ Karta pro Home Assistant, která zobrazuje jeden topný okruh v stylu Homecraft:
 
 **HACS (vlastní repozitář):** HACS → ⋮ → Vlastní repozitáře → `https://github.com/eMalinos/heating-card`, typ **Dashboard** → stáhnout **Heating Card** → obnovit prohlížeč.
 
-**Ručně:** zkopíruj [`dist/heating-card.js`](dist/heating-card.js) do `config/www/` a přidej ho jako zdroj dashboardu (Nastavení → Dashboardy → ⋮ → Zdroje → URL `/local/heating-card.js?v=0.1.1`, typ **JavaScript module**). Po zkopírování nové verze změň `?v=`.
+**Ručně:** zkopíruj [`dist/heating-card.js`](dist/heating-card.js) do `config/www/` a přidej ho jako zdroj dashboardu (Nastavení → Dashboardy → ⋮ → Zdroje → URL `/local/heating-card.js?v=0.1.2`, typ **JavaScript module**). Po zkopírování nové verze změň `?v=`.
 
 ## Konfigurace
 
@@ -32,11 +32,13 @@ condensing_boiler: true            # false skryje záložku Kotel v dialogu nast
 
 Gesta: `tap`, `double_tap`, `hold`, `icon_tap`, `icon_double_tap`, `icon_hold` nebo `none` (stejné hodnoty jako parametry topení); obě musí být různá, pokud nejsou obě `none`.
 
-Akce: segmenty režimu volají `input_select.select_option`, křížek u stavové zprávy ji smaže, **Srovnat** stiskne `input_button.heating_sync_<okruh>`, − / + mění cílovou teplotu hlavice o 0,5 °C (ne u hlavice s otevřeným oknem ani při vypnutém okruhu). Dialog statistik přijde později; `schedule_gesture` otevře `heating-schedule-card` v jednoduchém dialogu.
+Prostřední segment režimu se jmenuje *Čas* (ikona hodin) místo *Počasí*, když je pravidlo (`input_select.heating_auto_rule_<okruh>`) `time`.
+
+Akce: segmenty režimu volají `input_select.select_option`, křížek u stavové zprávy ji smaže, **Srovnat** stiskne `input_button.heating_sync_<okruh>`, − / + mění cílovou teplotu hlavice o její `target_temp_step` (bez něj 0,5 °C; ne u hlavice s otevřeným oknem ani při vypnutém okruhu). Dialog statistik přijde později; `schedule_gesture` otevře `heating-schedule-card` v jednoduchém dialogu.
 
 ## Dialog hlavice
 
-`info_gesture` otevře dialog hlavice (pod 600 px jako spodní list): ikona hlavice (blikající odznak baterie při slabé baterii), pod hlavičkou jediné upozornění (otevřené okno s minutami a připomínkou, jinak všechny slabé baterie hlavice), aktuální teplota s polohou ventilu, krokování cíle (zakázané při otevřeném okně nebo vypnutém okruhu), graf teploty a cíle za 24 h s úseky otevřeného okna jako tónovanými pásy, dlaždice *Hlavice* (baterie, signál, ventil, kalibrace; slabá baterie je červená a bliká), řádek pro každé okno (*Okna*) se stavem a vlastní baterií a patička: **Kalibrovat** (po potvrzení spustí `script.heating_calibrate_<okruh>` s `climate`) a **Rozvrh**. Tlačítko historie v hlavičce otevře more-info hlavice. Čidlo okna `unavailable` / `unknown` ukáže *Čidlo nedostupné*, nikdy *Zavřené*.
+`info_gesture` otevře dialog hlavice (pod 600 px jako spodní list): ikona hlavice (blikající odznak baterie při slabé baterii), pod hlavičkou jediné upozornění (otevřené okno s minutami a připomínkou, jinak všechny slabé baterie hlavice), aktuální teplota, krokování cíle (zakázané při otevřeném okně nebo vypnutém okruhu), graf teploty a cíle za 24 h (osa °C vlevo) s úseky otevřeného okna jako tónovanými pásy a rychlými starty / doběhy hlavice (`phases` ze `sensor.heating_valves_<okruh>`) jako proužky dole, s legendou, dlaždice *Hlavice* (baterie, signál slovy — Silný ≥ −70 dBm, OK ≥ −85, Slabý pod tím — s hodnotou v dBm, ventil, kalibrace; slabá baterie je červená a bliká), řádek pro každé okno (*Okna*) se stavem a vlastní baterií a patička: **Kalibrovat** (po potvrzení spustí `script.heating_calibrate_<okruh>` s `climate`) a **Rozvrh**. Tlačítko historie v hlavičce otevře more-info hlavice. Čidlo okna `unavailable` / `unknown` ukáže *Čidlo nedostupné*, nikdy *Zavřené*.
 
 ## Dialog programu
 
