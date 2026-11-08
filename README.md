@@ -41,8 +41,8 @@ Colours, radii and shadows come from the `--hfb-*` tokens of the [Homecraft styl
 
 ```sh
 node --test tests/*.test.mjs                      # pure logic: config, valveView, circuitView
-python3 -m http.server 8765 &
-"Google Chrome" --headless=new --virtual-time-budget=8000 --dump-dom http://localhost:8765/tests/dom.html | grep RESULT   # prints RESULT OK
+python3 -m http.server 8766 &
+"Google Chrome" --headless=new --virtual-time-budget=30000 --dump-dom http://localhost:8766/tests/dom.html | grep RESULT   # prints RESULT OK
 ```
 
 `tests/dom.html` renders the card with a fake `hass` built from `tests/fixtures/states.json` (real entity shapes from the dev HA, `circuit_demo`). Looks: `?theme=homecraft`, `?theme=dark`, none (HA fallbacks); add `&shot=1` for a screenshot.

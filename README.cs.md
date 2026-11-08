@@ -39,8 +39,8 @@ Barvy, zaoblení a stíny se berou z tokenů `--hfb-*` ze [stylu Homecraft](http
 
 ```sh
 node --test tests/*.test.mjs
-python3 -m http.server 8765 &
-"Google Chrome" --headless=new --virtual-time-budget=8000 --dump-dom http://localhost:8765/tests/dom.html | grep RESULT
+python3 -m http.server 8766 &
+"Google Chrome" --headless=new --virtual-time-budget=30000 --dump-dom http://localhost:8766/tests/dom.html | grep RESULT
 ```
 
 ## Licence

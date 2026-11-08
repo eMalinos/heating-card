@@ -7,9 +7,9 @@
 <!--
   Browser checks with a fake hass (tests/fixtures/states.json + 5 more valves, like design V5). Run:
   python3 -m http.server 8766 &
-  "Google Chrome" --headless=new --virtual-time-budget=8000 --dump-dom http://localhost:8766/tests/dom.html | grep RESULT
+  "Google Chrome" --headless=new --virtual-time-budget=30000 --dump-dom http://localhost:8766/tests/dom.html | grep RESULT
   Looks (?theme=): none = HA fallbacks (light), homecraft = Homecraft tokens (Břidlice light), dark = Břidlice dark tokens, e.g.
-  "Google Chrome" --headless=new --virtual-time-budget=8000 --window-size=512,900 --screenshot=docs/card.png "http://localhost:8766/tests/dom.html?shot=1&theme=homecraft"
+  "Google Chrome" --headless=new --virtual-time-budget=30000 --window-size=512,900 --screenshot=docs/card.png "http://localhost:8766/tests/dom.html?shot=1&theme=homecraft"
 -->
 <div id="box" style="width:480px"></div>
 <pre id="out"></pre>
@@ -99,10 +99,15 @@
   $('[data-act="sync"]').click(); await tick();
   r.syncCall = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'input_button', service: 'press', data: { entity_id: `input_button.heating_sync_${C}` } });
   const living = $$('.tile')[0];
-  living.querySelector('[data-d="1"]').click(); await tick();
+  $$('.tile')[0].querySelector('[data-d="1"]').click(); await tick();
   r.plusCall = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'climate', service: 'set_temperature', data: { entity_id: ids.living, temperature: 21.5 } });
-  living.querySelector('[data-d="-1"]').click(); await tick();
-  r.minusCall = calls.at(-1).data.temperature === 20.5;
+  // quick taps add up while hass still reports 21: 21.5, 22, then back to 21.5; the tile shows the pending value
+  $$('.tile')[0].querySelector('[data-d="1"]').click(); await tick();
+  r.plusPlus = calls.at(-1).data.temperature === 22 && $$('.tile .val')[0].textContent.replace(/\s/g, ' ') === '22,0 °C';
+  $$('.tile')[0].querySelector('[data-d="-1"]').click(); await tick();
+  r.minusCall = calls.at(-1).data.temperature === 21.5;
+  await tick(5200); // pending expires: back to what hass reports
+  r.pendingExpires = $$('.tile .val')[0].textContent.replace(/\s/g, ' ') === '21,0 °C';
   const nCalls = calls.length;
   $$('.tile')[5].querySelector('[data-d="1"]').click(); await tick();
   r.disabledNoCall = calls.length === nCalls;
@@ -115,6 +120,23 @@
   card.hass = { ...hass, states: { ...states, [`sensor.heating_applying_${C}`]: { state: 'applying', attributes: { trigger: 'program', left: 4 } } } };
   await tick();
   r.programApplying = $$('.facts .v')[0].textContent.includes('Nastavuji… 4') && !$('[data-act="sync"]').disabled;
+  card.hass = hass; await tick();
+
+  // an unrelated hass update rebuilds nothing; a change of one valve patches only its tile
+  const tile0 = $$('.tile')[0], tile1 = $$('.tile')[1], flame1 = tile1.querySelector('.flame'), box1 = $('[data-p="box1"] .head');
+  card.hass = { ...hass, states: { ...states, 'sensor.unrelated': { state: '1', attributes: {} } } }; await tick();
+  r.noRebuild = $$('.tile')[0] === tile0 && $('[data-p="box1"] .head') === box1;
+  card.hass = { ...hass, states: { ...states, [ids.living]: { ...states[ids.living], attributes: { ...states[ids.living].attributes, current_temperature: 20.9 } } } }; await tick();
+  r.patchOne = $$('.tile')[0] !== tile0 && $$('.tile')[1] === tile1 && tile1.querySelector('.flame') === flame1 && $$('.tile .state')[0].textContent === 'Topí · 20,9 °C';
+  // while a pointer is down the render waits for pointerup
+  const dn = $$('.main')[1];
+  ptr(dn, 'pointerdown');
+  card.hass = { ...hass, states: { ...states, [ids.workroom]: { ...states[ids.workroom], attributes: { ...states[ids.workroom].attributes, current_temperature: 19.5 } } } }; await tick();
+  r.deferred = $$('.tile .state')[1].textContent === 'Rychlý start · 18,9 °C' && $$('.main')[1] === dn;
+  ptr(dn, 'pointerup'); await tick();
+  r.flushed = $$('.tile .state')[1].textContent === 'Rychlý start · 19,5 °C';
+  await tick(300); // the tap above opens nothing pending; close a dialog it may have opened
+  if ($('dialog').open) $('dialog').close();
   card.hass = hass; await tick();
 
   // gestures: default = tap on the tile opens the schedule dialog, tap on the icon circle fires more-info
@@ -141,6 +163,23 @@
   await press(m0().querySelector('.dot'), 650); await tick();
   r.iconHold = dlg.open;
   dlg.close(); await tick();
+
+  // keyboard: Enter / Space on the text run schedule, on the icon button info, whatever the gestures are
+  card.setConfig({ ...cfg, schedule_gesture: 'hold', info_gesture: 'double_tap' });
+  const key = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, composed: true, cancelable: true }));
+  const nInfoK = infos.length;
+  const txt = root.querySelector('.txt[role="button"]');
+  key(txt, 'Enter'); await tick();
+  r.keySchedule = dlg.open;
+  dlg.close(); await tick();
+  const iconBtn = root.querySelector('button.dot');
+  r.iconIsButton = iconBtn.getAttribute('aria-label') === 'Detail Obývák';
+  key(iconBtn, ' '); await tick();
+  r.keyInfo = infos.length === nInfoK + 1 && infos.at(-1) === ids.living;
+  card.setConfig({ ...cfg, schedule_gesture: 'none', info_gesture: 'none' });
+  r.noneNoControls = !root.querySelector('button.dot') && !root.querySelector('.txt[role="button"]');
+  key(root.querySelector('.txt'), 'Enter'); await tick();
+  r.noneNoAction = !dlg.open && infos.length === nInfoK + 1;
 
   r.noErrors = errors.length === 0;
   const ok = Object.values(r).every(Boolean);

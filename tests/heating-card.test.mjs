@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, cardHtml, fmt, plural } from '../dist/heating-card.js';
+import { normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, fmt, plural } from '../dist/heating-card.js';
 
 const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/states.json', import.meta.url), 'utf8'));
 const C = 'circuit_demo';
@@ -157,4 +157,65 @@ test('cardHtml renders both boxes and the pieces by state', () => {
   assert.match(sync, /data-act="sync" data-k="sync" disabled/);
   const prog = cardHtml(world({ [`sensor.heating_applying_${C}`]: { state: 'applying', attributes: { trigger: 'program', left: 2 } } }), CFG);
   assert.match(prog, /Nastavuji… 2/);
+});
+
+test('nextTarget: quick taps add up from the pending value until hass reports it', () => {
+  const v = { climate: K, target: 21, min: 5, max: 30 };
+  const now = 1000;
+  assert.equal(nextTarget(v, {}, 1, now), 21.5);
+  const p = { [K]: { t: 21.5, at: now } };
+  assert.equal(nextTarget(v, p, 1, now + 100), 22); // second tap, hass still says 21
+  assert.equal(nextTarget(v, { [K]: { t: 22, at: now } }, -1, now + 100), 21.5);
+  assert.equal(nextTarget({ ...v, target: 21.5 }, p, 1, now + 100), 22); // hass caught up: from its value
+  assert.equal(nextTarget(v, p, 1, now + 5001), 21.5); // pending expired
+  assert.equal(nextTarget({ ...v, target: 30 }, {}, 1), 30); // clamped
+  assert.equal(nextTarget({ ...v, target: null }, {}, 1), null);
+});
+
+test('program: unavailable sensor falls back to the select, else a dash; Czech names', () => {
+  const prog = (p) => circuitView(world(p), CFG).programName;
+  const sensor = (state, attributes) => ({ [`sensor.heating_program_${C}`]: { state, attributes } });
+  assert.equal(prog(sensor('unavailable')), 'Výchozí'); // select says auto
+  assert.equal(prog({ ...sensor('unknown'), [`select.heating_program_${C}`]: { state: 'vacation' } }), 'Dovolená');
+  assert.equal(prog({ ...sensor('unavailable'), [`select.heating_program_${C}`]: { state: 'unavailable' } }), '—');
+  assert.equal(prog({ ...sensor('unavailable'), [`select.heating_program_${C}`]: { state: 'bogus' } }), '—');
+  // program_names -> texts of the mushroom dashboard -> the id
+  assert.equal(prog(sensor('auto', { program_names: {} })), 'Výchozí');
+  assert.equal(prog(sensor('vacation', { program_names: { vacation: 'Prázdniny' } })), 'Prázdniny');
+  assert.equal(prog(sensor('weekend', { program_names: {} })), 'weekend');
+});
+
+test('zoneHandlers: the icon falls back to the body per gesture', () => {
+  const z = gestureMap(normalizeConfig({ circuit: C, valves: [K], schedule_gesture: 'hold', info_gesture: 'icon_tap' }));
+  assert.deepEqual(zoneHandlers(z, 'icon'), { hold: 'schedule', tap: 'info' });
+  assert.deepEqual(zoneHandlers(z, 'body'), { hold: 'schedule' });
+});
+
+test('tile controls: icon button = info, text button = schedule, each only when not none', () => {
+  const html = (o) => cardHtml(world(), normalizeConfig({ circuit: C, valves: [K], ...o }));
+  const h = html({});
+  assert.match(h, /<button class="dot [a-z]+" data-zone="icon"[^>]*aria-label="Detail kitchen_valve"/);
+  assert.match(h, /class="txt" data-zone="body" role="button" tabindex="0"/);
+  const none = html({ info_gesture: 'none', schedule_gesture: 'none' });
+  assert.ok(!none.includes('aria-label="Detail') && !none.includes('role="button"'));
+});
+
+test('circuit active only when exactly on; unknown is shown as unknown', () => {
+  const unk = (state) => ({ [`binary_sensor.heating_active_${C}`]: { state } });
+  for (const s of ['unavailable', 'unknown']) {
+    const v = view(unk(s));
+    assert.equal(v.phase, 'off');
+    assert.equal(v.off, true);
+    assert.equal(v.state, 'Stav neznámý · 15,6 °C');
+    assert.equal(circuitView(world(unk(s)), CFG).subtitle, 'Stav neznámý');
+  }
+  assert.equal(view(unk('on')).off, false);
+  // a missing sensor too; mode off keeps its own text
+  const gone = world();
+  delete gone.states[`binary_sensor.heating_active_${C}`];
+  assert.equal(valveView(gone, CFG, K).state, 'Stav neznámý · 15,6 °C');
+  const modeOff = { ...unk('unavailable'), [`input_select.heating_mode_${C}`]: { state: 'off' } };
+  assert.equal(view(modeOff).state, 'Vypnuto · 15,6 °C');
+  assert.equal(circuitView(world(modeOff), CFG).subtitle, 'Vypnuto · hlavice na 5 °C');
+  assert.equal(view(unk('off')).state, 'Vypnuto · 15,6 °C');
 });

@@ -26,12 +26,16 @@ const ICON = {
 const T = {
   phase: { heat: 'Topí', fast: 'Rychlý start', run: 'Doběh', closed: 'Zavřeno', idle: 'Nečinný', window: 'Okno otevřené', off: 'Vypnuto' },
   source: { valve: 'hlavice', window: 'okno', other: 'čidlo' },
+  // ui.program_* of heating_texts.jinja, capitalised
+  program: { auto: 'Výchozí', vacation: 'Dovolená' },
 };
+const BAD = ['', 'unknown', 'unavailable', undefined, null];
 
 export const fmt = (n, d = 0) => Number(n).toLocaleString('cs-CZ', { minimumFractionDigits: d, maximumFractionDigits: d });
 
 // Czech plural: 1 / 2-4 / 5+ and 0.
-export const plural = (n, one, few, many) => `${n} ${n === 1 ? one : n >= 2 && n <= 4 ? few : many}`;
+export const pluralWord = (n, one, few, many) => (n === 1 ? one : n >= 2 && n <= 4 ? few : many);
+export const plural = (n, one, few, many) => `${n} ${pluralWord(n, one, few, many)}`;
 
 const num = (v) => { const x = Number.parseFloat(v); return Number.isFinite(x) ? x : null; };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -61,7 +65,9 @@ const eid = (cfg, domain, name) => `${domain}.${name}_${cfg.circuit}`;
 export function valveView(hass, cfg, climate) {
   const attrs = hass.states?.[climate]?.attributes ?? {};
   const windowOpen = (at(hass, eid(cfg, 'sensor', 'heating_off_schedule'), 'window_open_climates') ?? []).includes(climate);
-  const active = st(hass, eid(cfg, 'binary_sensor', 'heating_active')) !== 'off';
+  // the circuit counts as running only when the sensor says exactly `on`; unavailable / missing = unknown
+  const activeSt = st(hass, eid(cfg, 'binary_sensor', 'heating_active'));
+  const active = activeSt === 'on';
   const raw = at(hass, eid(cfg, 'sensor', 'heating_valves'), 'phases')?.[climate]?.[0] ?? 'normal';
   const inDemand = (at(hass, eid(cfg, 'sensor', 'heating_valves'), 'demand') ?? []).includes(climate);
   const phase = windowOpen ? 'window' : !active ? 'off'
@@ -69,7 +75,8 @@ export function valveView(hass, cfg, climate) {
   const now = num(attrs.current_temperature);
   const lowBattery = (at(hass, eid(cfg, 'sensor', 'heating_low_batteries'), 'low_battery') ?? [])
     .filter((r) => r.climate === climate).map((r) => ({ source: r.source, state: r.state }));
-  let state = T.phase[phase] + (now == null ? '' : ` · ${fmt(now, 1)} °C`);
+  const word = phase === 'off' && activeSt !== 'off' && st(hass, eid(cfg, 'input_select', 'heating_mode')) !== 'off' ? 'Stav neznámý' : T.phase[phase];
+  let state = word + (now == null ? '' : ` · ${fmt(now, 1)} °C`);
   if (lowBattery.length === 1) state = `Baterie ${lowBattery[0].state} %`;
   else if (lowBattery.length > 1) {
     const rows = lowBattery.map((b) => `${T.source[b.source] ?? T.source.other} ${b.state} %`).join(' · ');
@@ -90,9 +97,10 @@ export function circuitView(hass, cfg) {
   const demandList = at(hass, e('sensor', 'heating_valves'), 'demand') ?? [];
   const demand = cfg.valves.filter((v) => demandList.includes(v)).length;
   const left = num(at(hass, e('sensor', 'heating_valves'), 'left')) ?? 0;
-  const demandText = demand === 0 ? 'žádná hlavice netopí'
-    : demand === 1 ? '1 hlavice chce teplo' : `${demand} ${demand < 5 ? 'hlavice chtějí' : 'hlavic chce'} teplo`;
+  const demandText = demand === 0 ? 'žádná hlavice netopí' : `${plural(demand, 'hlavice chce', 'hlavice chtějí', 'hlavic chce')} teplo`;
+  const activeSt = st(hass, e('binary_sensor', 'heating_active'));
   const subtitle = mode === 'off' ? 'Vypnuto · hlavice na 5 °C'
+    : activeSt !== 'on' && activeSt !== 'off' ? 'Stav neznámý'
     : boilerOn ? `Kotel topí · ${demandText}`
       : left > 0 ? `Kotel netopí · doběh čerpadla, ještě ${left} min` : 'Kotel netopí';
 
@@ -116,8 +124,14 @@ export function circuitView(hass, cfg) {
   const text = (m ? m[2] : rawStatus).trim();
   const status = text && !['unknown', 'unavailable'].includes(text) ? { level: m ? m[1] : 'info', text } : null;
 
-  const programId = st(hass, e('sensor', 'heating_program')) ?? st(hass, e('select', 'heating_program'));
-  const programName = at(hass, e('sensor', 'heating_program'), 'program_names')?.[programId] ?? programId ?? '';
+  // program id: the sensor, else the select when its state is a real option; never "unavailable"
+  let programId = st(hass, e('sensor', 'heating_program'));
+  if (BAD.includes(programId)) {
+    const s = st(hass, e('select', 'heating_program'));
+    programId = !BAD.includes(s) && (at(hass, e('select', 'heating_program'), 'options') ?? []).includes(s) ? s : null;
+  }
+  const programName = programId == null ? '—'
+    : at(hass, e('sensor', 'heating_program'), 'program_names')?.[programId] ?? T.program[programId] ?? programId;
   const ap = e('sensor', 'heating_applying');
   return {
     title: cfg.heading || at(hass, e('binary_sensor', 'heating_state'), 'title') || cfg.circuit,
@@ -147,6 +161,17 @@ export function gestureMap(cfg) {
   return zones;
 }
 
+// What a gesture does in a zone; the icon circle falls back to the body per gesture.
+export const zoneHandlers = (zones, zone) => (zone === 'icon' ? { ...zones.body, ...zones.icon } : zones.body);
+
+// A pending ± target is dropped once hass reports it or after 5 s.
+export const PENDING_MS = 5000;
+export function nextTarget(v, pending, dir, now = Date.now()) {
+  const p = pending?.[v.climate];
+  const base = p && now - p.at < PENDING_MS && p.t !== v.target ? p.t : v.target;
+  return base == null ? null : Math.round(Math.min(v.max, Math.max(v.min, base + STEP * dir)) * 10) / 10;
+}
+
 const svg = (path, size, extra = '') => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" ${extra}><path d="${path}"></path></svg>`;
 const stroke = (path, size, w = 2) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" aria-hidden="true"><path d="${path}"></path></svg>`;
 const spinner = '<svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9" stroke-linecap="round"></path></svg>';
@@ -165,31 +190,34 @@ const MODES = [
 const PHASE_DOT = { heat: 'heat', fast: 'hot', run: 'run', closed: 'idle', idle: 'idle', window: 'dis', off: 'dis' };
 const PHASE_ICON = { heat: ICON.fire, fast: ICON.fire, run: ICON.pipe, closed: ICON.closed, idle: ICON.fire, window: ICON.window, off: ICON.fire };
 
-function tileHtml(v) {
+function tileHtml(v, cfg) {
   const flame = v.phase === 'heat' || v.phase === 'fast';
   const cls = ['tile', flame && 'hot', v.off && 'off'].filter(Boolean).join(' ');
   const bat = v.lowBattery.length > 0;
   const fmtT = (t) => (t == null ? '–' : fmt(t, 1));
+  const glyph = `${svg(PHASE_ICON[v.phase], 20, flame ? 'class="flame"' : '')}${bat ? `<span class="badge blink">${svg(ICON.battery, 12)}</span>` : ''}`;
+  const q = esc(v.climate);
+  // the icon circle is its own button (info), the text is the tile's button (schedule); each only when its action is not `none`
+  const dot = cfg.info_gesture === 'none' ? `<span class="dot ${PHASE_DOT[v.phase]}" data-zone="icon">${glyph}</span>`
+    : `<button class="dot ${PHASE_DOT[v.phase]}" data-zone="icon" data-k="i:${q}" aria-label="Detail ${esc(v.name)}">${glyph}</button>`;
+  const btn = cfg.schedule_gesture === 'none' ? '' : ` role="button" tabindex="0" data-k="m:${q}" aria-label="Rozvrh ${esc(v.name)}"`;
   return `<div class="${cls}" data-phase="${v.phase}">
-  <div class="main dim" role="button" tabindex="0" data-valve="${esc(v.climate)}" data-k="m:${esc(v.climate)}">
-    <span class="dot ${PHASE_DOT[v.phase]}" data-zone="icon">${svg(PHASE_ICON[v.phase], 20, flame ? 'class="flame"' : '')}${bat ? `<span class="badge blink">${svg(ICON.battery, 12)}</span>` : ''}</span>
-    <div class="txt"><div class="name">${esc(v.name)}</div><div class="state${bat ? ' blink low' : ''}">${esc(v.state)}</div></div>
+  <div class="main dim" data-valve="${q}">
+    ${dot}
+    <div class="txt" data-zone="body"${btn}><div class="name">${esc(v.name)}</div><div class="state${bat ? ' blink low' : ''}">${esc(v.state)}</div></div>
   </div>
   <div class="ctl">
-    <button class="pm" data-act="step" data-valve="${esc(v.climate)}" data-d="-1" data-k="-:${esc(v.climate)}" aria-label="Snížit cíl"${v.off ? ' disabled' : ''}>${stroke('M6 12h12', 14, 2.4)}</button>
+    <button class="pm" data-act="step" data-valve="${q}" data-d="-1" data-k="-:${q}" aria-label="Snížit cíl"${v.off ? ' disabled' : ''}>${stroke('M6 12h12', 14, 2.4)}</button>
     <span class="dim val">${fmtT(v.target)} °C</span>
-    <button class="pm" data-act="step" data-valve="${esc(v.climate)}" data-d="1" data-k="+:${esc(v.climate)}" aria-label="Zvýšit cíl"${v.off ? ' disabled' : ''}>${stroke('M6 12h12M12 6v12', 14, 2.4)}</button>
+    <button class="pm" data-act="step" data-valve="${q}" data-d="1" data-k="+:${q}" aria-label="Zvýšit cíl"${v.off ? ' disabled' : ''}>${stroke('M6 12h12M12 6v12', 14, 2.4)}</button>
   </div>
 </div>`;
 }
 
-export function cardHtml(hass, cfg) {
-  const c = circuitView(hass, cfg);
-  const views = cfg.valves.map((v) => valveView(hass, cfg, v));
+function box1Html(c) {
   const syncing = c.applying.on && c.applying.trigger === 'sync';
   const programApplying = c.applying.on && c.applying.trigger === 'program';
-  return `<div class="card">
-  <div class="head">
+  return `<div class="head">
     <div class="dot ${c.boilerOn ? 'heat' : 'idle'}">${svg(ICON.fire, 20, c.boilerOn ? 'class="flame"' : '')}</div>
     <div class="txt"><h2>${esc(c.title)}</h2><div class="sub">${esc(c.subtitle)}</div></div>
     ${c.outdoor == null ? '' : `<div class="live"><b>${fmt(c.outdoor, 1)}</b> <span class="unit">°C</span><small>venku teď</small></div>`}
@@ -201,17 +229,41 @@ export function cardHtml(hass, cfg) {
   </div>
   <div class="soft panel">
     <div class="facts">
-      <div><div class="lbl">Program</div><div class="v">${programApplying ? `<span class="applying">${spinner}Nastavuji… ${c.applying.left}</span>` : esc(c.programName || '–')}</div></div>
-      <div><div class="lbl">Mimo rozvrh</div><div class="v">${c.offSchedule} <small>${c.offSchedule === 1 ? 'hlavice' : c.offSchedule >= 2 && c.offSchedule <= 4 ? 'hlavice' : 'hlavic'}</small></div></div>
+      <div><div class="lbl">Program</div><div class="v">${programApplying ? `<span class="applying">${spinner}Nastavuji… ${c.applying.left}</span>` : esc(c.programName)}</div></div>
+      <div><div class="lbl">Mimo rozvrh</div><div class="v">${c.offSchedule} <small>${pluralWord(c.offSchedule, 'hlavice', 'hlavice', 'hlavic')}</small></div></div>
     </div>
     <button class="sb" data-act="sync" data-k="sync"${syncing ? ' disabled' : ''}>${syncing ? spinner : ''}Srovnat</button>
-  </div>
-</div>
+  </div>`;
+}
+
+// The card's HTML in the pieces that are patched separately: box 1, the box 2 summary, one string per tile.
+// `pending` = ± targets sent but not yet reported by hass (climate -> {t, at}).
+export function cardParts(hass, cfg, pending = {}) {
+  const views = cfg.valves.map((v) => {
+    const x = valveView(hass, cfg, v);
+    return pending[v] ? { ...x, target: pending[v].t } : x;
+  });
+  return { box1: box1Html(circuitView(hass, cfg)), summary: valvesSummary(views), tiles: views.map((v) => tileHtml(v, cfg)) };
+}
+
+export function cardHtml(hass, cfg, pending) {
+  const p = cardParts(hass, cfg, pending);
+  return `<div class="card">${p.box1}</div>
 <div class="card">
-  <div class="head2"><div class="h">Hlavice</div><div class="sub">${esc(valvesSummary(views))}</div></div>
-  <div class="grid">${views.map(tileHtml).join('')}</div>
+  <div class="head2"><div class="h">Hlavice</div><div class="sub">${esc(p.summary)}</div></div>
+  <div class="grid">${p.tiles.join('')}</div>
 </div>`;
 }
+
+// Every entity box 1 and the tiles read; a hass update re-renders only when one of these changed.
+const CIRCUIT_ENTITIES = [
+  ['switch', 'boiler'], ['input_select', 'heating_mode'], ['input_select', 'heating_auto_rule'], ['input_datetime', 'heating_time_from'],
+  ['input_datetime', 'heating_time_to'], ['input_number', 'heating_weather_threshold'], ['input_text', 'heating_status'],
+  ['select', 'heating_program'], ['sensor', 'heating_program'], ['sensor', 'heating_applying'], ['sensor', 'heating_off_schedule'],
+  ['sensor', 'heating_valves'], ['sensor', 'heating_low_batteries'], ['sensor', 'heating_outdoor_temperature'],
+  ['binary_sensor', 'heating_active'], ['binary_sensor', 'heating_state'],
+];
+export const watchedIds = (cfg) => [...CIRCUIT_ENTITIES.map(([d, n]) => eid(cfg, d, n)), ...cfg.valves];
 
 const STYLE = `
 :host { display: flex; flex-direction: column; gap: 12px; --c-card: var(--hfb-card, var(--card-background-color, #fff)); --c-border: var(--hfb-border, var(--divider-color, #e0e0e0)); --c-fill: var(--hfb-fill, var(--secondary-background-color, #f0f2f5)); --c-text: var(--hfb-text, var(--primary-text-color, #1c2128)); --c-text2: var(--hfb-text-2, var(--secondary-text-color, #6e7682)); --c-accent: var(--hfb-accent, var(--primary-color, #4f6b8c)); --c-raised: var(--hfb-btn-raised-bg, var(--card-background-color, #fff)); --c-raised-sh: var(--hfb-btn-raised-shadow, none); --c-err: var(--error-color, #e5484d); color: var(--c-text); }
@@ -228,6 +280,8 @@ h2 { margin: 0; font-size: 16px; font-weight: 500; }
 .dot.heat { background: var(--hfb-heat-dot, linear-gradient(145deg, #FFA66E, #E8592C)); box-shadow: var(--hfb-heat-glow, 0 0 0 3px rgba(232,89,44,.14), 0 2px 6px rgba(232,89,44,.32)); color: var(--hfb-dot-on-icon, #fff); }
 .dot.hot { background: var(--hfb-hot-dot, linear-gradient(145deg, #FF7A38, #CF3416)); box-shadow: var(--hfb-hot-glow, 0 0 0 4px rgba(214,58,28,.18), 0 0 14px rgba(214,58,28,.5)); color: var(--hfb-dot-on-icon, #fff); }
 .dot.run { background: var(--hfb-run-dot, linear-gradient(145deg, color-mix(in srgb, var(--primary-color, #4f6b8c) 65%, #fff), var(--primary-color, #4f6b8c))); box-shadow: var(--hfb-run-glow, 0 2px 6px color-mix(in srgb, var(--primary-color, #4f6b8c) 40%, transparent)); color: var(--hfb-dot-on-icon, #fff); }
+button.dot { border: 0; padding: 0; cursor: pointer; font: inherit; }
+.tw { display: contents; }
 .dot.idle { background: var(--hfb-dot-idle, var(--card-background-color, #fff)); color: #607D8B; }
 .dot.dis { background: var(--hfb-dot-idle, var(--card-background-color, #fff)); color: var(--disabled-text-color, #a9afb7); }
 .alert { display: flex; align-items: center; gap: 10px; border-radius: 12px; padding: 6px 4px 6px 12px; font-size: 13px; --lv: var(--info-color, #039be5); background: color-mix(in srgb, var(--lv) var(--hfb-alert-tint, 12%), transparent); color: var(--lv); }
@@ -275,8 +329,13 @@ dialog::backdrop { background: rgba(0, 0, 0, .4); }
 class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
   constructor() {
     super();
-    this._g = null; // gesture in progress {valve, zone, timer, held}
+    this._g = null; // gesture in progress {valve, zone, main, timer, held}
     this._tap = null; // a tap waiting for a possible double tap {key, timer}
+    this._pending = {}; // ± targets sent, not yet in hass: climate -> {t, at}
+    this._seen = null; // the watched states of the last render
+    this._last = {}; // the last html of each patched part
+    this._pressed = false; // a pointer is down: renders wait
+    this._dirty = false;
     this.attachShadow({ mode: 'open' });
     this.shadowRoot.innerHTML = `<style>${STYLE}</style><div class="wrap" style="display:contents"></div><dialog aria-label="Rozvrh"></dialog>`;
     this._wrap = this.shadowRoot.querySelector('.wrap');
@@ -285,7 +344,12 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     root.addEventListener('click', (e) => this._onClick(e));
     root.addEventListener('pointerdown', (e) => this._down(e));
     root.addEventListener('pointerup', () => this._up());
-    root.addEventListener('pointercancel', () => this._cancel());
+    root.addEventListener('pointercancel', () => { this._cancel(); this._release(); });
+    root.addEventListener('lostpointercapture', () => this._cancel());
+    root.addEventListener('pointerout', (e) => { // the pointer left the pressed tile
+      const g = this._g;
+      if (g && !g.main.contains(e.relatedTarget)) this._cancel();
+    });
     root.addEventListener('keydown', (e) => this._key(e));
     this._dlg.addEventListener('click', (e) => { if (e.target === this._dlg) this._dlg.close(); });
     this._dlg.addEventListener('close', () => { this._dlg.replaceChildren(); this._sched = null; });
@@ -298,14 +362,19 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
   setConfig(config) {
     this._cfg = normalizeConfig(config);
     this._zones = gestureMap(this._cfg);
-    this._html = null;
+    this._ids = watchedIds(this._cfg);
+    this._seen = null;
+    this._built = false;
     if (this._hass) this._render();
   }
 
   set hass(hass) {
     this._hass = hass;
     if (this._sched) this._sched.hass = hass;
-    if (this._cfg) this._render();
+    if (!this._cfg) return;
+    const next = this._ids.map((id) => hass.states?.[id]);
+    if (this._seen && next.every((s, i) => s === this._seen[i])) return; // nothing the card shows changed
+    this._request();
   }
 
   getCardSize() {
@@ -316,15 +385,43 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     return { columns: 12, min_columns: 6 };
   }
 
-  // Re-render only when the markup changed (keeps the flame animation and a gesture in progress),
-  // and give the focus back to the same control.
+  // While a pointer is down the render waits (a rebuilt tile would swallow the press).
+  _request() {
+    if (this._pressed) this._dirty = true;
+    else this._render();
+  }
+
+  _release() {
+    this._pressed = false;
+    if (this._dirty) setTimeout(() => { if (!this._pressed && this._dirty) { this._dirty = false; this._render(); } }, 0); // after the click
+  }
+
+  // Patches only the parts whose markup changed (the flame / blink of the other tiles keeps running)
+  // and gives the focus back to the same control.
+  _set(el, html, key) {
+    if (this._last[key] === html) return;
+    this._last[key] = html;
+    const k = el.contains(this.shadowRoot.activeElement) ? this.shadowRoot.activeElement.dataset?.k : null;
+    el.innerHTML = html;
+    if (k) el.querySelector(`[data-k="${CSS.escape(k)}"]`)?.focus();
+  }
+
   _render() {
-    const html = cardHtml(this._hass, this._cfg);
-    if (html === this._html) return;
-    this._html = html;
-    const k = this.shadowRoot.activeElement?.dataset?.k;
-    this._wrap.innerHTML = html;
-    if (k) this.shadowRoot.querySelector(`[data-k="${CSS.escape(k)}"]`)?.focus();
+    const now = Date.now();
+    for (const [climate, p] of Object.entries(this._pending)) {
+      if (now - p.at >= PENDING_MS || num(this._hass.states?.[climate]?.attributes?.temperature) === p.t) delete this._pending[climate];
+    }
+    this._seen = this._ids.map((id) => this._hass.states?.[id]);
+    const parts = cardParts(this._hass, this._cfg, this._pending);
+    if (!this._built) {
+      this._wrap.innerHTML = `<div class="card" data-p="box1"></div><div class="card"><div class="head2"><div class="h">Hlavice</div><div class="sub" data-p="sum"></div></div><div class="grid">${
+        this._cfg.valves.map((v) => `<div class="tw" data-v="${esc(v)}"></div>`).join('')}</div></div>`;
+      this._last = {};
+      this._built = true;
+    }
+    this._set(this._wrap.querySelector('[data-p="box1"]'), parts.box1, 'box1');
+    this._set(this._wrap.querySelector('[data-p="sum"]'), esc(parts.summary), 'sum');
+    this._wrap.querySelectorAll('.tw').forEach((el, i) => this._set(el, parts.tiles[i], `t${i}`));
   }
 
   _call(domain, service, data) {
@@ -338,27 +435,31 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     const act = b.dataset.act;
     if (act === 'mode') this._call('input_select', 'select_option', { entity_id: eid(c, 'input_select', 'heating_mode'), option: b.dataset.val });
     else if (act === 'clear') this._call('input_text', 'set_value', { entity_id: eid(c, 'input_text', 'heating_status'), value: '' });
-    else if (act === 'sync') this._call('input_button', 'press', { entity_id: `input_button.heating_sync_${c.circuit}` });
+    else if (act === 'sync') this._call('input_button', 'press', { entity_id: eid(c, 'input_button', 'heating_sync') });
     else if (act === 'step') {
       const v = valveView(this._hass, c, b.dataset.valve);
-      if (v.off || v.target == null) return;
-      const t = Math.round(Math.min(v.max, Math.max(v.min, v.target + STEP * Number(b.dataset.d))) * 10) / 10;
+      if (v.off) return;
+      // quick taps add up: the next step starts from the last value sent, until hass reports it
+      const t = nextTarget(v, this._pending, Number(b.dataset.d));
+      if (t == null) return;
+      this._pending[v.climate] = { t, at: Date.now() };
       this._call('climate', 'set_temperature', { entity_id: v.climate, temperature: t });
+      clearTimeout(this._pt);
+      this._pt = setTimeout(() => this._request(), PENDING_MS + 50);
+      this._render();
     }
   }
 
   // Gestures on a tile: tap / double tap / hold on the body or the icon circle.
-  _handlers(zone) {
-    const z = this._zones;
-    return Object.keys(z[zone]).length ? z[zone] : z.body;
-  }
-
   _down(e) {
+    this._pressed = true;
+    clearTimeout(this._g?.timer);
+    this._g = null;
     const main = e.target.closest('.main');
     if (!main || e.button > 0) return;
     const zone = e.target.closest('[data-zone="icon"]') ? 'icon' : 'body';
-    const g = { valve: main.dataset.valve, zone, held: false };
-    const h = this._handlers(zone);
+    const g = { valve: main.dataset.valve, zone, main, held: false };
+    const h = zoneHandlers(this._zones, zone);
     if (h.hold) g.timer = setTimeout(() => { g.held = true; this._run(h.hold, g.valve); }, HOLD_MS);
     this._g = g;
   }
@@ -371,8 +472,9 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
   _up() {
     const g = this._g;
     this._cancel();
+    this._release();
     if (!g || g.held) return;
-    const h = this._handlers(g.zone);
+    const h = zoneHandlers(this._zones, g.zone);
     const key = `${g.valve}|${g.zone}`;
     if (this._tap && this._tap.key === key && h.double_tap) { // second tap in time
       clearTimeout(this._tap.timer);
@@ -384,13 +486,18 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     } else if (h.tap) this._run(h.tap, g.valve);
   }
 
+  // Enter / Space: the tile's text runs the schedule action, the icon button the info action,
+  // whatever gesture they are mapped to (only when not `none`).
   _key(e) {
-    const main = e.target.closest?.('.main');
-    if (!main || (e.key !== 'Enter' && e.key !== ' ')) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target.closest?.('[data-zone]');
+    const valve = e.target.closest?.('.main')?.dataset.valve;
+    if (!el || !valve) return;
+    const c = this._cfg;
+    const action = el.dataset.zone === 'icon' ? (c.info_gesture !== 'none' && 'info') : (c.schedule_gesture !== 'none' && 'schedule');
+    if (!action) return;
     e.preventDefault();
-    const h = this._handlers(e.target.closest('[data-zone="icon"]') ? 'icon' : 'body');
-    const a = h.tap || this._zones.body.tap || this._zones.icon.tap;
-    if (a) this._run(a, main.dataset.valve);
+    this._run(action, valve);
   }
 
   _run(action, climate) {
