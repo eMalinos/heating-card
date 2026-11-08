@@ -292,7 +292,7 @@
     && vd.querySelector('.vd-tile.low .fv').textContent === '14 %' && t('.vd-win .wn') === 'Okno balkon';
   r.vdFacts = [...vd.querySelectorAll('.vd-tile .fv')].map((e) => e.textContent).join('|') === '14 %|OK (−71 dBm)|12 %|V pořádku';
   r.vdWindows = vd.querySelectorAll('.vd-win').length === 2 && vd.querySelectorAll('.vd-h')[1].textContent === 'Okna (2)' && vd.querySelector('.vd-win .chip.low') && vd.querySelectorAll('.vd-win .chip').length === 2;
-  r.vdChart = !!vd.querySelector('.vd-chart svg path[stroke="#E8592C"]') && wsCalls.at(-1).entity_ids.length === 4 && vd.querySelectorAll('.band').length === 0 && vd.querySelectorAll('.ph-fast-l').length === 1 && vd.querySelectorAll('.ch-y2 span').length === 3 && vd.querySelectorAll('.ch-y span').length > 1;
+  r.vdChart = !!vd.querySelector('.vd-chart svg path[stroke="#E8592C"]') && wsCalls.at(-1).entity_ids.length === 4 && vd.querySelectorAll('.band').length === 0 && !vd.querySelector('.ph-run, .ph-fast') && vd.querySelectorAll('.ch-y span').length > 1;
   // chart window: ‹ goes 6 h back (whole hours), › and Teď come back; a drag right by a quarter of the plot = 6 h back
   const hourNow = Math.floor(Date.now() / 3600000) * 3600000;
   // the fetch covers 48 h before the window's end and 24 h after it (at most now)
@@ -319,7 +319,7 @@
   r.vdCtlHidden = vd.querySelector('.ctl').hidden;
   card.hass = { ...hass, states: { ...states, [`input_select.heating_target_control_${C}`]: { state: 'track', attributes: {} } } }; await tick();
   const ctl = vd.querySelector('.ctl'), tr = ctl.querySelector('.tr').getBoundingClientRect();
-  const pe = (type, fx, pointerId = 1) => ctl.dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, pointerId, clientX: tr.left + tr.width * fx, clientY: tr.top + 30 }));
+  const pe = (type, fx, pointerId = 1) => (vd.querySelector('.ctl .tr-win') ?? ctl).dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, pointerId, clientX: tr.left + tr.width * fx, clientY: tr.top + 30 }));
   const ctlCalls = calls.length;
   // a tap (no movement) sends nothing and does not jump the value
   pe('pointerdown', 0.9); pe('pointerup', 0.9); await tick();
@@ -332,7 +332,7 @@
   await press($$('.main')[7].querySelector('.dot')); await tick(200);
   const ctl2 = vd.querySelector('.ctl');
   r.vdCtlReopen = !!ctl2 && !ctl2.hidden;
-  const pe2 = (type, fx, pointerId = 1) => vd.querySelector('.ctl').dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, pointerId, clientX: tr.left + tr.width * fx, clientY: tr.top + 30 }));
+  const pe2 = (type, fx, pointerId = 1) => (vd.querySelector('.ctl .tr-win') ?? vd.querySelector('.ctl')).dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, pointerId, clientX: tr.left + tr.width * fx, clientY: tr.top + 30 }));
   // a second finger is ignored
   pe2('pointerdown', 0.3); pe2('pointermove', 0.61); pe2('pointermove', 0.95, 2); pe2('pointerup', 0.95, 2);
   r.vdCtlOtherFinger = t('.tv') === '20,5 °C' && calls.length === ctlCalls;

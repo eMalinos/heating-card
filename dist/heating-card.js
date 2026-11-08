@@ -282,30 +282,27 @@ export function chartModel(rows, wins, end, hours = 24, phaseRows = [], climate 
   const x = (t) => Math.round(((Math.min(end, Math.max(start, t)) - start) / (end - start)) * W * 10) / 10;
   // the valve's phase spans: a phase holds until the next row of the sensor
   const ph = (phaseRows ?? []).map((r) => ({ t: ts(r), p: r.a?.phases?.[climate]?.[0] ?? 'normal' })).filter((p) => Number.isFinite(p.t) && p.t <= last).sort((a, b) => a.t - b.t);
-  const phaseAt = (t) => { let p = 'normal'; for (const r of ph) { if (r.t > t) break; p = r.p; } return p; };
-  // a target at the valve's max / min is Node-RED forcing it (fast start, run at max; window, off at min) and so is
-  // any target during fast start: left out of the °C scale; fast start's goes to the right axis
-  let cur = null, raw = null, lo = -Infinity, hi = Infinity;
-  const pts = (rows ?? []).map((r) => {
+  // a target at the valve's max / min (each row's own range) is Node-RED forcing it (fast start, run at max; window,
+  // off at min): left out of the °C line and scale; while the valve is in fast start it goes to the right axis
+  let cur = null, tgt = null, raw = null, lo = -Infinity, hi = Infinity, k = 0, phase = 'normal';
+  const pt = (t) => { const forced = raw != null && (raw >= hi || raw <= lo); tgt = raw == null || forced ? null : raw; return { t, cur, tgt, fast: forced && phase === 'fast' ? raw : null }; };
+  const pts = [];
+  for (const { r, t } of (rows ?? []).map((r) => ({ r, t: ts(r) })).filter((p) => Number.isFinite(p.t) && p.t <= last).sort((a, b) => a.t - b.t)) {
+    // both sorted, one pass: a phase change between two rows adds a point, so fast start ends where the sensor says
+    while (k < ph.length && ph[k].t <= t) { phase = ph[k].p; if (pts.length && ph[k].t > pts.at(-1).t) pts.push(pt(ph[k].t)); k++; }
     lo = num(r.a?.min_temp) ?? lo; hi = num(r.a?.max_temp) ?? hi;
     cur = num(r.a?.current_temperature) ?? cur;
     raw = num(r.a?.temperature) ?? raw;
-    return { t: ts(r), cur, raw };
-  }).filter((p) => Number.isFinite(p.t) && p.t <= last);
-  // split at every phase change too, so a fast-start span starts and ends where the sensor says
-  for (const r of ph) if (r.t > start && !pts.some((p) => p.t === r.t)) { const prev = pts.filter((p) => p.t < r.t).at(-1); if (prev) pts.push({ ...prev, t: r.t }); }
-  pts.sort((a, b) => a.t - b.t);
-  for (const p of pts) {
-    const fast = phaseAt(p.t) === 'fast';
-    p.tgt = p.raw == null || fast || p.raw >= hi || p.raw <= lo ? null : p.raw;
-    p.fast = fast && p.raw != null ? p.raw : null;
+    pts.push(pt(t));
   }
+  while (k < ph.length && ph[k].t <= last) { phase = ph[k].p; if (pts.length && ph[k].t > pts.at(-1).t) pts.push(pt(ph[k].t)); k++; }
   const vals = pts.flatMap((p) => [p.cur, p.tgt]).filter((n) => n != null);
   if (!vals.length) return null;
   const yLo = Math.floor(Math.min(...vals) - 0.5), yHi = Math.ceil(Math.max(...vals) + 0.5);
   const y = (n) => Math.round((CHART.bottom - ((n - yLo) / (yHi - yLo)) * (CHART.bottom - CHART.top)) * 10) / 10;
   // the right axis: the valve's whole range (fast start holds it near the top)
-  const rLo = Number.isFinite(lo) ? lo : 5, rHi = Number.isFinite(hi) ? hi : 30;
+  let rLo = Number.isFinite(lo) ? lo : 5, rHi = Number.isFinite(hi) ? hi : 30;
+  if (!(rHi > rLo)) [rLo, rHi] = [5, 30]; // a collapsed range would divide by 0
   const yR = (n) => Math.round((CHART.bottom - ((Math.min(rHi, Math.max(rLo, n)) - rLo) / (rHi - rLo)) * (CHART.bottom - CHART.top)) * 10) / 10;
   const line = (key, step, yf = y) => {
     let d = '', prev = null;
@@ -435,6 +432,7 @@ export function controlHtml(kind, v, t) {
   if (t == null) return '';
   const span = v.max - v.min, col = tempColor(t), r1 = (n) => Math.round(n * 10) / 10;
   const step = v.step ?? STEP, tv = fmtTarget(t, step), nowT = v.now == null ? '–' : fmt(v.now, 1), dis = v.off ? ' disabled' : '';
+  const cil = v.phase === 'window' ? 'Cíl · platí po zavření okna' : 'Cíl'; // as the target row says
   const pm = (d) => `<button class="pm raised big" data-act="step" data-valve="${esc(v.climate ?? '')}" data-d="${d}" data-k="c${d}" aria-label="${d < 0 ? 'Snížit' : 'Zvýšit'} cíl o ${fmt(step, decimals(step))} °C"${dis}>${stroke(d < 0 ? 'M6 12h12' : 'M6 12h12M12 6v12', 16, 2.4)}</button>`;
   const wholes = []; for (let n = Math.ceil(v.min); n <= v.max; n++) wholes.push(n);
   if (kind === 'arc') {
@@ -454,13 +452,13 @@ export function controlHtml(kind, v, t) {
   <circle cx="${pt(ARC.a0, ARC.r)[0]}" cy="${pt(ARC.a0, ARC.r)[1]}" r="9" fill="${tempColor(v.min)}"></circle>${segs.join('')}
   ${nowDot}<circle cx="${kx}" cy="${ky}" r="15" class="knob"></circle><circle cx="${kx}" cy="${ky}" r="6" fill="${col}"></circle>
   <text x="${pt(ARC.a0, ARC.r + 10)[0] - 8}" y="${ARC.h - 4}" class="end">${fmt(v.min)}°</text><text x="${pt(ARC.a0 + ARC.sw, ARC.r + 10)[0] + 8}" y="${ARC.h - 4}" text-anchor="end" class="end">${fmt(v.max)}°</text>
-</svg><div class="arc-c"><div class="lbl">Cíl</div><b>${tv}</b><div class="lbl">°C · teď ${nowT}</div></div></div>
+</svg><div class="arc-c"><div class="lbl">${cil}</div><b>${tv}</b><div class="lbl">°C · teď ${nowT}</div></div></div>
 <div class="ctl-pm">${pm(-1)}<span class="lbl">krok ${fmt(step, decimals(step))} °C</span>${pm(1)}</div>`;
   }
   if (kind === 'ruler') {
     const x = (n) => r1((n - v.min) * RULER_PX);
     const halves = []; for (let n = Math.ceil(v.min * 2) / 2; n <= v.max; n += 0.5) halves.push(n);
-    return `<div class="ctl-head"><span class="lbl">Cíl</span><b class="tv-big" style="color: ${col}">${tv}</b><span class="u">°C</span></div>
+    return `<div class="ctl-head"><span class="lbl">${cil}</span><b class="tv-big" style="color: ${col}">${tv}</b><span class="u">°C</span></div>
 <div class="rl-win"><div class="rl-in" style="transform: translateX(${-x(t)}px)">
   <span class="rl-strip" style="width: ${x(v.max)}px; background: ${spectrum(v.min, v.max)}"></span>
   ${v.now == null ? '' : `<span class="rl-now" style="left: ${x(v.now) - 9}px"></span>`}
@@ -470,7 +468,7 @@ export function controlHtml(kind, v, t) {
 <div class="ctl-pm sp">${pm(-1)}<span class="lbl">teď ${nowT} °C · krok ${fmt(step, decimals(step))}</span>${pm(1)}</div>`;
   }
   const pct = (n) => `${r1(((Math.min(v.max, Math.max(v.min, n)) - v.min) / span) * 100)}%`;
-  return `<div class="ctl-head row"><div class="th"><div class="lbl">Cíl</div><b class="tv-mid">${tv}</b> <span class="u">°C</span></div>${pm(-1)}${pm(1)}</div>
+  return `<div class="ctl-head row"><div class="th"><div class="lbl">${cil}</div><b class="tv-mid">${tv}</b> <span class="u">°C</span></div>${pm(-1)}${pm(1)}</div>
 <div class="tr-win"><div class="tr"><div class="tr-bar"></div><div class="tr-fill" style="background: ${spectrum(v.min, v.max)}; clip-path: inset(0 max(0px, calc(100% - ${pct(t)} - 10px)) 0 0 round 10px); filter: drop-shadow(0 0 6px ${col})"></div>
   ${wholes.map((n) => `<span class="tr-t${n % 5 ? '' : ' w'}" style="left: ${pct(n)}"></span>`).join('')}
   ${v.now == null ? '' : `<span class="tr-now" style="left: ${pct(v.now)}"></span>`}
@@ -1578,14 +1576,14 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .vd-now .chip { background: var(--c-fill); margin-bottom: 8px; }
 .chip.low { background: color-mix(in srgb, var(--c-err) var(--hfb-alert-tint, 12%), transparent); color: var(--c-err); }
 .vd-target { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; } .vd-target > .tvw { flex: 1; }
-.vd-target.off > .tvw { opacity: .6; } .vd-target.slider { display: none; }
+.vd-target.off > .tvw { opacity: .6; } .vd-target.slider { display: none; } .ctl.win .arc-c, .ctl.win .ctl-head { opacity: .6; }
 .ctl[hidden] { display: none; }
 .vd-tile.warn .fv { color: var(--warning-color, #B45309); }
 .ctl { flex: none; position: relative; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; outline-offset: 2px; }
 .ctl.off { opacity: .5; cursor: default; }
 .ctl.arc, .ctl.ruler, .ctl.track { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 14px 12px 12px; border-radius: 20px; cursor: default; }
 .ctl.arc { align-items: center; padding: 16px 12px 14px; }
-.ctl .lbl { font-size: 12px; color: var(--c-text2); } .ctl .u { font-size: 15px; color: var(--c-text2); }
+[data-p="ctl"] .lbl { font-size: 12px; color: var(--c-text2); } [data-p="ctl"] .u { font-size: 15px; color: var(--c-text2); }
 .ctl-pm { display: flex; align-items: center; justify-content: center; gap: 14px; } .ctl-pm.sp { justify-content: space-between; }
 .pm.big { width: 44px; height: 44px; border-radius: 12px; }
 .ctl-head { display: flex; align-items: baseline; justify-content: center; gap: 6px; } .ctl-head.row { align-items: center; gap: 10px; } .ctl-head .th { flex: 1; }
@@ -1965,7 +1963,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     el.hidden = kind === 'buttons' || t == null;
     this._vdlg.querySelector('.vd-target')?.classList.toggle('slider', !el.hidden); // a shown slider replaces − / +
     if (el.hidden) return;
-    el.className = `soft ctl ${kind}${v.off ? ' off' : ''}${this._drag ? ' drag' : ''}`;
+    el.className = `soft ctl ${kind}${v.off ? ' off' : ''}${v.phase === 'window' ? ' win' : ''}${this._drag ? ' drag' : ''}`;
     el.setAttribute('aria-valuemin', v.min); el.setAttribute('aria-valuemax', v.max);
     el.setAttribute('aria-valuenow', t); el.setAttribute('aria-valuetext', `${fmtTarget(t, v.step)} °C`);
     el.setAttribute('aria-disabled', String(v.off));
@@ -2294,8 +2292,8 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     }
     const ctl = e.target.closest('.ctl');
     const kind = ctl && targetControl(this._hass, this._cfg);
-    // the arc only from its knob (the rest of the box scrolls the sheet), the ruler and the track anywhere
-    if (ctl && this._vd && e.button <= 0 && !this._drag && !e.target.closest('button') && (kind !== 'arc' || e.target.closest('.knob-hit'))) {
+    // the arc only from its knob, the ruler and the track from their strip (the rest of the box scrolls the sheet)
+    if (ctl && this._vd && e.button <= 0 && !this._drag && e.target.closest(kind === 'arc' ? '.knob-hit' : '.rl-win, .tr-win')) {
       const v = valveView(this._hass, this._cfg, this._vd);
       const t0 = currentTarget(v, this._pending);
       if (v.off || t0 == null) return;
@@ -2340,7 +2338,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     const ctl = e.target.closest?.('.ctl');
     if (ctl && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
       e.preventDefault();
-      const b = this._vdlg.querySelector(`[data-act="step"][data-d="${e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 1}"]`);
+      const b = this._vdlg.querySelector(`.ctl [data-act="step"][data-d="${e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 1}"]`);
       if (b && !b.disabled) b.click();
       return;
     }
