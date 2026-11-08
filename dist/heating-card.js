@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.4';
+const VERSION = '0.1.5';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -121,7 +121,7 @@ export function valveView(hass, cfg, climate) {
   const lowBattery = (at(hass, eid(cfg, 'sensor', 'heating_low_batteries'), 'low_battery') ?? [])
     .filter((r) => r.climate === climate).map((r) => ({ source: r.source, state: r.state }));
   const word = phase === 'off' && activeSt !== 'off' && st(hass, eid(cfg, 'input_select', 'heating_mode')) !== 'off' ? 'Stav neznámý' : T.phase[phase];
-  let state = word + (now == null ? '' : ` · ${fmt(now, 1)} °C`);
+  let state = word + (now == null ? '' : ` · ${fmt(now, 1)}\u00a0°C`); // the unit stays with the number when the line wraps
   if (lowBattery.length === 1) state = `Baterie ${lowBattery[0].state} %`;
   else if (lowBattery.length > 1) {
     const rows = lowBattery.map((b) => batteryText({ source: b.source, state: b.state })).join(' · ');
@@ -487,7 +487,7 @@ function tileHtml(v, cfg) {
   </div>
   <div class="ctl">
     <button class="pm" data-act="step" data-valve="${q}" data-d="-1" data-k="-:${q}" aria-label="Snížit cíl"${v.off ? ' disabled' : ''}>${stroke('M6 12h12', 14, 2.4)}</button>
-    <span class="dim val">${fmtT(v.target)} °C</span>
+    <span class="dim val">${fmtT(v.target)}<small> °C</small></span>
     <button class="pm" data-act="step" data-valve="${q}" data-d="1" data-k="+:${q}" aria-label="Zvýšit cíl"${v.off ? ' disabled' : ''}>${stroke('M6 12h12M12 6v12', 14, 2.4)}</button>
   </div>
 </div>`;
@@ -1504,16 +1504,17 @@ button.dot { border: 0; padding: 0; cursor: pointer; font: inherit; }
 .sb { height: 32px; border: 0; border-radius: 10px; background: var(--c-raised); box-shadow: var(--c-raised-sh); padding: 0 12px; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; flex: none; }
 .sb:disabled { opacity: .6; cursor: default; }
 .head2 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; } .head2 .h { font-size: 15px; font-weight: 600; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr)); gap: 8px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 136px), 1fr)); gap: 8px; }
 .tile { padding: 10px 8px 8px 10px; display: flex; flex-direction: column; gap: 8px; background: var(--c-tile-bg); border: var(--c-tile-border); box-shadow: var(--c-tile-shadow); border-radius: var(--c-tile-radius); }
+.tile > .ctl { margin-top: auto; } /* the − / + row at the bottom when a neighbour's name takes two lines */
 .tile.hot { background: var(--hfb-hot-tile, color-mix(in srgb, #E8592C 8%, var(--secondary-background-color, #f0f2f5))); }
 .main { display: flex; align-items: center; gap: 8px; cursor: pointer; outline-offset: 2px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
-.name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.state { font-size: 12px; color: var(--c-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.name { font-size: 13px; font-weight: 600; line-height: 1.25; overflow-wrap: break-word; }
+.state { font-size: 12px; line-height: 1.25; color: var(--c-text2); overflow-wrap: break-word; }
 .state.low { color: var(--c-err); font-weight: 600; }
 .ctl { display: flex; align-items: center; gap: 4px; background: var(--c-card); border-radius: 12px; padding: 2px; }
-.val { flex: 1; text-align: center; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.pm { width: 36px; height: 36px; border: 0; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center; }
+.val { flex: 1; min-width: 0; text-align: center; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; } .val small { font-size: 10px; font-weight: 500; color: var(--c-text2); }
+.pm { width: 30px; height: 36px; flex: none; border: 0; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center; }
 .pm:disabled { opacity: .4; cursor: default; }
 .tile.off .dim { opacity: .5; filter: grayscale(1); }
 .badge { position: absolute; right: -4px; bottom: -4px; width: 18px; height: 18px; border-radius: 50%; background: var(--c-err); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--c-fill); }

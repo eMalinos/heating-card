@@ -52,17 +52,17 @@ test('fmt and plural', () => {
 test('valveView: phases', () => {
   const idle = view({});
   assert.equal(idle.phase, 'idle');
-  assert.equal(idle.state, 'Nečinný · 15,6 °C');
+  assert.equal(idle.state, 'Nečinný · 15,6 °C');
   assert.equal(idle.target, 21);
   assert.equal(idle.name, 'kitchen_valve');
   assert.equal(idle.off, false);
   assert.equal(view(valves({ demand: [K] })).phase, 'heat');
-  assert.equal(view(valves({ demand: [K] })).state, 'Topí · 15,6 °C');
+  assert.equal(view(valves({ demand: [K] })).state, 'Topí · 15,6 °C');
   assert.equal(view(valves({ phases: { [K]: ['fast'] }, demand: [K] })).phase, 'fast');
-  assert.equal(view(valves({ phases: { [K]: ['fast'] } })).state, 'Rychlý start · 15,6 °C');
+  assert.equal(view(valves({ phases: { [K]: ['fast'] } })).state, 'Rychlý start · 15,6 °C');
   assert.equal(view(valves({ phases: { [K]: ['run'] } })).phase, 'run');
   assert.equal(view(valves({ phases: { [K]: ['overrun'] } })).phase, 'run');
-  assert.equal(view(valves({ phases: { [K]: ['overrun'] } })).state, 'Doběh · 15,6 °C');
+  assert.equal(view(valves({ phases: { [K]: ['overrun'] } })).state, 'Doběh · 15,6 °C');
   assert.equal(view(valves({ phases: { [K]: ['closed'] }, demand: [K] })).phase, 'closed');
   // the first item of a phase row is the phase; a missing valve is `normal`
   assert.equal(view(valves({ phases: { [K]: ['normal', 'since', 21, false] }, demand: [K] })).phase, 'heat');
@@ -73,11 +73,11 @@ test('valveView: window and circuit off are disabled', () => {
   const w = view({ [`sensor.heating_off_schedule_${C}`]: { attributes: { window_open_climates: [K] } }, ...valves({ demand: [K], phases: { [K]: ['fast'] } }) });
   assert.equal(w.phase, 'window');
   assert.equal(w.off, true);
-  assert.equal(w.state, 'Okno otevřené · 15,6 °C');
+  assert.equal(w.state, 'Okno otevřené · 15,6 °C');
   const off = view({ [`binary_sensor.heating_active_${C}`]: { state: 'off' }, ...valves({ demand: [K] }) });
   assert.equal(off.phase, 'off');
   assert.equal(off.off, true);
-  assert.equal(off.state, 'Vypnuto · 15,6 °C');
+  assert.equal(off.state, 'Vypnuto · 15,6 °C');
   // window beats off
   assert.equal(view({ [`binary_sensor.heating_active_${C}`]: { state: 'off' }, [`sensor.heating_off_schedule_${C}`]: { attributes: { window_open_climates: [K] } } }).phase, 'window');
 });
@@ -215,18 +215,18 @@ test('circuit active only when exactly on; unknown is shown as unknown', () => {
     const v = view(unk(s));
     assert.equal(v.phase, 'off');
     assert.equal(v.off, true);
-    assert.equal(v.state, 'Stav neznámý · 15,6 °C');
+    assert.equal(v.state, 'Stav neznámý · 15,6 °C');
     assert.equal(circuitView(world(unk(s)), CFG).subtitle, 'Stav neznámý');
   }
   assert.equal(view(unk('on')).off, false);
   // a missing sensor too; mode off keeps its own text
   const gone = world();
   delete gone.states[`binary_sensor.heating_active_${C}`];
-  assert.equal(valveView(gone, CFG, K).state, 'Stav neznámý · 15,6 °C');
+  assert.equal(valveView(gone, CFG, K).state, 'Stav neznámý · 15,6 °C');
   const modeOff = { ...unk('unavailable'), [`input_select.heating_mode_${C}`]: { state: 'off' } };
-  assert.equal(view(modeOff).state, 'Vypnuto · 15,6 °C');
+  assert.equal(view(modeOff).state, 'Vypnuto · 15,6 °C');
   assert.equal(circuitView(world(modeOff), CFG).subtitle, 'Vypnuto · hlavice na 5 °C');
-  assert.equal(view(unk('off')).state, 'Vypnuto · 15,6 °C');
+  assert.equal(view(unk('off')).state, 'Vypnuto · 15,6 °C');
 });
 
 // ---- valve dialog ----

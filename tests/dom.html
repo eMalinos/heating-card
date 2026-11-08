@@ -183,7 +183,7 @@
   r.panel = $$('.facts .v')[0].textContent === 'Víkend' && $$('.facts .v')[1].textContent.replace(/\s+/g, ' ').trim() === '2 hlavice';
   r.phases = $$('.tile').map((t) => t.dataset.phase).join() === 'heat,fast,run,idle,closed,window,heat,idle';
   r.tileLooks = $$('.tile.hot').length === 3 && $$('.tile.off').length === 1 && $$('.flame').length === 4 && $$('.badge').length === 2; // 3 hot tiles + header flame
-  r.states = $$('.tile .state').map((s) => s.textContent).join('|') === 'Topí · 20,4 °C|Rychlý start · 18,9 °C|Doběh · 19,2 °C|Nečinný · 21,2 °C|Zavřeno · 18,6 °C|Okno otevřené · 19,6 °C|Baterie 9 %|Hlavice 14 % · okno 8 %';
+  r.states = $$('.tile .state').map((s) => s.textContent).join('|') === 'Topí · 20,4 °C|Rychlý start · 18,9 °C|Doběh · 19,2 °C|Nečinný · 21,2 °C|Zavřeno · 18,6 °C|Okno otevřené · 19,6 °C|Baterie 9 %|Hlavice 14 % · okno 8 %';
   r.summary = $('.head2 .sub').textContent === '3 topí · 1 okno · 2 baterie';
   r.disabledTile = $$('.tile')[5].querySelectorAll('.pm:disabled').length === 2 && $$('.tile')[0].querySelectorAll('.pm:disabled').length === 0;
   r.targets = $$('.tile .val')[1].textContent.replace(/\s/g, ' ') === '20,5 °C';
@@ -224,14 +224,14 @@
   card.hass = { ...hass, states: { ...states, 'sensor.unrelated': { state: '1', attributes: {} } } }; await tick();
   r.noRebuild = $$('.tile')[0] === tile0 && $('[data-p="box1"] .head') === box1;
   card.hass = { ...hass, states: { ...states, [ids.living]: { ...states[ids.living], attributes: { ...states[ids.living].attributes, current_temperature: 20.9 } } } }; await tick();
-  r.patchOne = $$('.tile')[0] !== tile0 && $$('.tile')[1] === tile1 && tile1.querySelector('.flame') === flame1 && $$('.tile .state')[0].textContent === 'Topí · 20,9 °C';
+  r.patchOne = $$('.tile')[0] !== tile0 && $$('.tile')[1] === tile1 && tile1.querySelector('.flame') === flame1 && $$('.tile .state')[0].textContent === 'Topí · 20,9 °C';
   // while a pointer is down the render waits for pointerup
   const dn = $$('.main')[1];
   ptr(dn, 'pointerdown');
   card.hass = { ...hass, states: { ...states, [ids.workroom]: { ...states[ids.workroom], attributes: { ...states[ids.workroom].attributes, current_temperature: 19.5 } } } }; await tick();
-  r.deferred = $$('.tile .state')[1].textContent === 'Rychlý start · 18,9 °C' && $$('.main')[1] === dn;
+  r.deferred = $$('.tile .state')[1].textContent === 'Rychlý start · 18,9 °C' && $$('.main')[1] === dn;
   ptr(dn, 'pointerup'); await tick();
-  r.flushed = $$('.tile .state')[1].textContent === 'Rychlý start · 19,5 °C';
+  r.flushed = $$('.tile .state')[1].textContent === 'Rychlý start · 19,5 °C';
   await tick(300); // the tap above opens nothing pending; close a dialog it may have opened
   if ($('dialog').open) $('dialog').close();
   card.hass = hass; await tick();
