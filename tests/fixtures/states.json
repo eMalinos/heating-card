@@ -1,0 +1,272 @@
+{
+ "binary_sensor.heating_active_circuit_demo": {
+  "attributes": {
+   "friendly_name": "heating_active_circuit_demo",
+   "icon": "mdi:radiator"
+  },
+  "state": "on"
+ },
+ "binary_sensor.heating_state_circuit_demo": {
+  "attributes": {
+   "area_id": "circuit_demo",
+   "device_class": "heat",
+   "friendly_name": "heating_state_circuit_demo",
+   "title": "Přízemí",
+   "url": "/hfb-features/test"
+  },
+  "state": "on"
+ },
+ "climate.bedroom_valve": {
+  "attributes": {
+   "current_temperature": 15.6,
+   "friendly_name": "bedroom_valve",
+   "hvac_action": "heating",
+   "hvac_modes": [
+    "heat",
+    "off"
+   ],
+   "max_temp": 30.0,
+   "min_temp": 5.0,
+   "supported_features": 385,
+   "target_temp_step": 0.1,
+   "temperature": 21.0
+  },
+  "state": "heat"
+ },
+ "climate.kitchen_valve": {
+  "attributes": {
+   "current_temperature": 15.6,
+   "friendly_name": "kitchen_valve",
+   "hvac_action": "heating",
+   "hvac_modes": [
+    "heat",
+    "off"
+   ],
+   "max_temp": 30.0,
+   "min_temp": 5.0,
+   "supported_features": 385,
+   "target_temp_step": 0.1,
+   "temperature": 21.0
+  },
+  "state": "heat"
+ },
+ "climate.office_valve": {
+  "attributes": {
+   "current_temperature": 15.6,
+   "friendly_name": "office_valve",
+   "hvac_action": "idle",
+   "hvac_modes": [
+    "heat",
+    "off"
+   ],
+   "max_temp": 30.0,
+   "min_temp": 5.0,
+   "supported_features": 385,
+   "target_temp_step": 0.1,
+   "temperature": 5.0
+  },
+  "state": "heat"
+ },
+ "input_button.heating_sync_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Srovnat podle rozvrhu circuit_demo"
+  },
+  "state": "unknown"
+ },
+ "input_datetime.heating_time_from_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Topit od circuit_demo",
+   "has_date": false,
+   "has_time": true,
+   "hour": 0,
+   "minute": 0,
+   "second": 0,
+   "timestamp": 0
+  },
+  "state": "00:00:00"
+ },
+ "input_datetime.heating_time_to_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Topit do circuit_demo",
+   "has_date": false,
+   "has_time": true,
+   "hour": 0,
+   "minute": 0,
+   "second": 0,
+   "timestamp": 0
+  },
+  "state": "00:00:00"
+ },
+ "input_number.heating_weather_threshold_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Topit pod venkovní teplotou circuit_demo",
+   "initial": null,
+   "max": 25.0,
+   "min": 5.0,
+   "mode": "box",
+   "step": 0.5,
+   "unit_of_measurement": "°C"
+  },
+  "state": "15.0"
+ },
+ "input_select.heating_auto_rule_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Pravidlo režimu podle počasí circuit_demo",
+   "options": [
+    "weather",
+    "time"
+   ]
+  },
+  "state": "weather"
+ },
+ "input_select.heating_holidays_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Svátky topení circuit_demo",
+   "options": [
+    "none",
+    "calendar"
+   ]
+  },
+  "state": "none"
+ },
+ "input_select.heating_mode_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Režim topení circuit_demo",
+   "options": [
+    "on",
+    "by_weather",
+    "off"
+   ]
+  },
+  "state": "on"
+ },
+ "input_text.heating_status_circuit_demo": {
+  "attributes": {
+   "editable": true,
+   "friendly_name": "Stav topení circuit_demo",
+   "max": 255,
+   "min": 0,
+   "mode": "text",
+   "pattern": null
+  },
+  "state": ""
+ },
+ "select.heating_program_circuit_demo": {
+  "attributes": {
+   "area": "circuit_demo",
+   "friendly_name": "heating_program_circuit_demo",
+   "icon": "mdi:calendar-week",
+   "options": [
+    "auto",
+    "vacation"
+   ]
+  },
+  "state": "auto"
+ },
+ "sensor.heating_applying_circuit_demo": {
+  "attributes": {
+   "friendly_name": "heating_applying_circuit_demo",
+   "icon": "mdi:progress-clock",
+   "left": 0,
+   "pending": [],
+   "trigger": "program"
+  },
+  "state": "idle"
+ },
+ "sensor.heating_low_batteries_circuit_demo": {
+  "attributes": {
+   "friendly_name": "heating_low_batteries_circuit_demo",
+   "icon": "mdi:battery-alert",
+   "list_low": [],
+   "list_ok": [],
+   "low_battery": [],
+   "low_battery_climates": []
+  },
+  "state": "0"
+ },
+ "sensor.heating_off_schedule_circuit_demo": {
+  "attributes": {
+   "friendly_name": "heating_off_schedule_circuit_demo",
+   "icon": "mdi:calendar-alert",
+   "off": [],
+   "window_open": [],
+   "window_open_climates": []
+  },
+  "state": "0"
+ },
+ "sensor.heating_outdoor_temperature_circuit_demo": {
+  "attributes": {
+   "device_class": "temperature",
+   "friendly_name": "heating_outdoor_temperature_circuit_demo",
+   "icon": "mdi:thermometer",
+   "unit_of_measurement": "°C"
+  },
+  "state": "-24.4"
+ },
+ "sensor.heating_program_circuit_demo": {
+  "attributes": {
+   "area": "circuit_demo",
+   "friendly_name": "heating_program_circuit_demo",
+   "icon": "mdi:calendar-week",
+   "program_names": {
+    "auto": "Výchozí",
+    "vacation": "Dovolená"
+   },
+   "programs": [
+    "auto",
+    "vacation"
+   ]
+  },
+  "state": "auto"
+ },
+ "sensor.heating_valves_circuit_demo": {
+  "attributes": {
+   "closed": [],
+   "demand": [],
+   "forced": [],
+   "friendly_name": "heating_valves_circuit_demo",
+   "icon": "mdi:pipe-valve",
+   "last": [
+    "climate.kitchen_valve",
+    "climate.bedroom_valve"
+   ],
+   "left": 0,
+   "phases": {
+    "climate.bedroom_valve": [
+     "normal",
+     "2026-11-08T00:36:57.163428+00:00",
+     21.0,
+     false
+    ],
+    "climate.kitchen_valve": [
+     "normal",
+     "2026-11-07T22:00:52.486049+00:00",
+     21.0,
+     false
+    ],
+    "climate.office_valve": [
+     "normal",
+     "2026-11-07T22:00:52.485779+00:00",
+     null,
+     false
+    ]
+   },
+   "summary": "všechny podle rozvrhu"
+  },
+  "state": "0"
+ },
+ "switch.boiler_circuit_demo": {
+  "attributes": {
+   "friendly_name": "boiler_circuit_demo",
+   "icon": "mdi:water-boiler"
+  },
+  "state": "on"
+ }
+}
