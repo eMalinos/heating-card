@@ -394,21 +394,42 @@
   const src = g('select.pick');
   src.value = `sensor.heating_outdoor_temperature_${C}`; src.dispatchEvent(new Event('change', { bubbles: true, composed: true })); await tick();
   r.sdSource = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'input_text', service: 'set_value', data: { entity_id: 'input_text.heating_outdoor_temperature_source', value: `sensor.heating_outdoor_temperature_${C}` } });
-  // time rule: two native time pickers, a change writes HH:MM:00
+  // time rule: two native time pickers; the value is written once when the edit ends (blur / Enter), as HH:MM:00, and only if it changed
   const timeRule = { ...hass, states: { ...states, [`input_select.heating_auto_rule_${C}`]: { state: 'time', attributes: {} },
     [`input_datetime.heating_time_from_${C}`]: { state: '06:00:00', attributes: {} }, [`input_datetime.heating_time_to_${C}`]: { state: '22:00:00', attributes: {} } } };
   card.hass = timeRule; await tick();
   r.sdTimes = gd.querySelectorAll('input[type="time"]').length === 2 && g('input[type="time"]').value === '06:00' && /^Je \d\d:\d\d, mezi 06:00 a 22:00/.test(g('.alert span').textContent);
   const t1 = g('input[type="time"]');
-  t1.value = '07:30'; t1.dispatchEvent(new Event('change', { bubbles: true, composed: true })); await tick();
-  r.sdTimeCall = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'input_datetime', service: 'set_datetime', data: { entity_id: `input_datetime.heating_time_from_${C}`, time: '07:30:00' } });
-  // a focused time input is not rebuilt by a hass update; it lands when the focus leaves
+  const nT = calls.length;
+  t1.value = '07:15'; t1.dispatchEvent(new Event('input', { bubbles: true, composed: true })); t1.dispatchEvent(new Event('change', { bubbles: true, composed: true })); await tick();
+  r.sdTimeNoCallWhileEditing = calls.length === nT;
+  t1.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true })); await tick();
+  r.sdTimeCall = calls.length === nT + 1 && JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'input_datetime', service: 'set_datetime', data: { entity_id: `input_datetime.heating_time_from_${C}`, time: '07:15:00' } });
+  t1.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true })); await tick();
+  r.sdTimeUnchangedSkip = calls.length === nT + 1;
+  const t1b = g('input[type="time"]');
+  t1b.value = '07:30'; t1b.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  t1b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true })); await tick();
+  r.sdTimeEnter = calls.length === nT + 2 && calls.at(-1).data.time === '07:30:00';
+  // a focused but idle time input does not freeze the dialog; one being edited does until blur
   const t2 = g('input[type="time"]');
   t2.dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
-  card.hass = { ...timeRule, states: { ...timeRule.states, [`input_datetime.heating_time_to_${C}`]: { state: '21:00:00', attributes: {} } } }; await tick();
-  r.sdTimeKept = g('input[type="time"]') === t2 && gd.querySelectorAll('input[type="time"]')[1].value === '22:00';
-  t2.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true })); await tick(50);
-  r.sdTimeFlush = g('input[type="time"]') !== t2 && gd.querySelectorAll('input[type="time"]')[1].value === '21:00';
+  card.hass = { ...timeRule, states: { ...timeRule.states, [`sensor.heating_weather_ok_${C}`]: { state: 'off', attributes: {} } } }; await tick();
+  r.sdTimeIdleLive = !!g('.alert.info');
+  const t3 = gd.querySelectorAll('input[type="time"]')[1];
+  t3.value = '21:45'; t3.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  card.hass = { ...timeRule, states: { ...timeRule.states, [`input_datetime.heating_time_from_${C}`]: { state: '05:00:00', attributes: {} } } }; await tick();
+  r.sdTimeKept = gd.querySelectorAll('input[type="time"]')[1] === t3 && g('input[type="time"]').value !== '05:00';
+  t3.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true })); await tick(50);
+  r.sdTimeFlush = g('input[type="time"]').value === '05:00' && calls.at(-1).data.time === '21:45:00';
+  card.hass = hass; await tick();
+  // the outdoor source options are read when the picker gets focus (a sensor that appeared meanwhile is listed)
+  card.hass = { ...hass, states: { ...states, 'sensor.new_temp': { state: '3.5', attributes: { device_class: 'temperature', friendly_name: 'Nový', unit_of_measurement: '°C' } } } }; await tick();
+  const srcSel = g('select.pick');
+  r.sdSourceStale = ![...srcSel.options].some((o) => o.value === 'sensor.new_temp');
+  srcSel.dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
+  r.sdSourceFresh = [...g('select.pick').options].some((o) => o.textContent === 'Nový · 3,5 °C') && g('select.pick').value === 'sensor.outdoor_temperature';
+  srcSel.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true })); await tick(50);
   card.hass = hass; await tick();
   // an open select is not rebuilt either
   const s1 = g('select.pick');
@@ -418,6 +439,21 @@
   s1.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true })); await tick(50);
   r.sdSelectFlush = g('select.pick') !== s1 && g('.alert.info') !== null;
   card.hass = hass; await tick();
+  // tab pattern: roles, roving tabindex, arrows move and select
+  const tabEl = (v) => g(`[role="tab"][data-val="${v}"]`);
+  r.sdTabA11y = g('[role="tablist"]') !== null && g('[role="tabpanel"]').getAttribute('aria-labelledby') === 'set-tab-rule' && tabEl('rule').getAttribute('aria-controls') === g('[role="tabpanel"]').id
+    && tabEl('rule').tabIndex === 0 && tabEl('boiler').tabIndex === -1;
+  const arrow = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, composed: true, cancelable: true }));
+  tabEl('rule').focus(); arrow(tabEl('rule'), 'ArrowRight'); await tick();
+  r.sdArrowRight = tabOn() === 'boiler' && gd.getRootNode().activeElement === tabEl('boiler') && g('[role="tabpanel"]').getAttribute('aria-labelledby') === 'set-tab-boiler';
+  arrow(tabEl('boiler'), 'End'); await tick();
+  r.sdEnd = tabOn() === 'other' && gd.getRootNode().activeElement === tabEl('other');
+  arrow(tabEl('other'), 'ArrowRight'); await tick();
+  r.sdWrap = tabOn() === 'rule';
+  arrow(tabEl('rule'), 'ArrowLeft'); await tick();
+  r.sdLeftWrap = tabOn() === 'other';
+  arrow(tabEl('other'), 'Home'); await tick();
+  r.sdHome = tabOn() === 'rule';
   // Kotel: phase strip, five fields, + on the pump run-on (10 -> 11), phase counts
   g('[data-act="tab"][data-val="boiler"]').click(); await tick();
   r.sdBoiler = tabOn() === 'boiler' && gd.querySelectorAll('.phase .ph div').length === 4 && gd.querySelectorAll('.field').length === 5 && gd.querySelectorAll('.field .fi svg').length === 5;
@@ -426,10 +462,14 @@
   r.sdRunLabel = g(`[data-act="num"][data-id="${run}"]`).getAttribute('aria-label') === 'Doběh čerpadla: méně';
   g(`[data-act="num"][data-id="${run}"][data-d="1"]`).click(); await tick();
   r.sdRunCall = JSON.stringify(calls.at(-1)) === JSON.stringify({ domain: 'input_number', service: 'set_value', data: { entity_id: run, value: 11 } });
-  // hass reports it: the pending value is dropped
+  // - right after: back to 10 although hass still reports 10; the first report (11) must not flip the display or the next base
+  g(`[data-act="num"][data-id="${run}"][data-d="-1"]`).click(); await tick();
+  r.sdRunBack = calls.at(-1).data.value === 10 && g(`[data-act="num"][data-id="${run}"]`).closest('.field').querySelector('.fval').textContent.trim().startsWith('10');
   card.hass = { ...hass, states: { ...states, [run]: { state: '11.0', attributes: states[run].attributes } } }; await tick();
+  r.sdRunHold = g(`[data-act="num"][data-id="${run}"]`).closest('.field').querySelector('.fval').textContent.trim().startsWith('10');
+  card.hass = { ...hass, states: { ...states, [run]: { state: '10.0', attributes: states[run].attributes } } }; await tick(); // hass reports 10: dropped
   g(`[data-act="num"][data-id="${run}"][data-d="1"]`).click(); await tick();
-  r.sdRunAgain = calls.at(-1).data.value === 12;
+  r.sdRunAgain = calls.at(-1).data.value === 11;
   card.hass = hass; await tick();
   // Okna: reminder, a row per valve, the open window in info text, read only
   g('[data-act="tab"][data-val="windows"]').click(); await tick();

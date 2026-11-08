@@ -685,6 +685,15 @@ const srcLabel = (hass, id) => {
   const v = srcValue(hass, id);
   return `${at(hass, id, 'friendly_name') || id}${v == null ? '' : ` · ${fmt(v, 1)} °C`}`;
 };
+// HH:MM in Home Assistant's time zone (hass.config.time_zone), else the browser's.
+export function clockText(hass, now) {
+  const opts = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+  let parts;
+  try { parts = new Intl.DateTimeFormat('cs-CZ', { ...opts, timeZone: hass.config?.time_zone }).formatToParts(now); }
+  catch (e) { parts = new Intl.DateTimeFormat('cs-CZ', opts).formatToParts(now); }
+  const p = (t) => parts.find((x) => x.type === t)?.value ?? '00';
+  return `${p('hour')}:${p('minute')}`;
+}
 const hhmm = (v) => { const t = String(v ?? '').slice(0, 5); return /^\d\d:\d\d$/.test(t) ? t : ''; };
 const minutesSince = (iso, now) => { const t = Date.parse(iso); return Number.isFinite(t) ? Math.max(0, Math.floor((now - t) / 60000)) : null; };
 const isOpen = (w) => w.open === true || w.state === 'on';
@@ -730,25 +739,25 @@ const SETTINGS_TAB = {
     if (ok === 'on' || ok === 'off') {
       const out = num(st(hass, e('sensor', 'heating_outdoor_temperature')));
       const x = threshold?.value;
-      const d = new Date(now);
+      const on = ok === 'on';
+      const [from, to] = [times[0]?.value || '–', times[1]?.value || '–'];
       const when = rule === 'time'
-        ? `Je ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}, mezi ${times[0]?.value || '–'} a ${times[1]?.value || '–'}`
-        : `Venku ${out == null ? '–' : fmt(out, 1)} °C, pod ${x == null ? '–' : fmt(x, Number.isInteger(x) ? 0 : 1)} °C`;
-      alert = ok === 'on' ? { level: 'success', text: `${when} – kotel smí v režimu Počasí topit.` } : { level: 'info', text: `${when} – v režimu Počasí kotel teď netopí.` };
+        ? `Je ${clockText(hass, now)}, ${on ? `mezi ${from} a ${to}` : `mimo ${from}–${to}`}`
+        : `Venku ${out == null ? '–' : fmt(out, 1)} °C, ${on ? 'pod' : 'nad'} ${x == null ? '–' : fmt(x, Number.isInteger(x) ? 0 : 1)} °C`;
+      alert = on ? { level: 'success', text: `${when} – kotel smí v režimu Počasí topit.` } : { level: 'info', text: `${when} – v režimu Počasí kotel teď netopí.` };
     }
     return { rule, hasRule: !!hass.states?.[e('input_select', 'heating_auto_rule')], alert, fields: threshold ? [threshold] : [], source, times };
   },
 
   boiler(hass, cfg, ctx) {
     const e = (d, n) => eid(cfg, d, n);
-    const phases = at(hass, e('sensor', 'heating_valves'), 'phases') ?? {};
-    const demand = at(hass, e('sensor', 'heating_valves'), 'demand') ?? [];
+    // the tiles' phases (valveView), so the line matches them
     let fast = 0, run = 0, heat = 0;
     for (const v of cfg.valves) {
-      const raw = phases[v]?.[0];
-      if (raw === 'fast') fast++;
-      else if (raw === 'run' || raw === 'overrun') run++;
-      else if (demand.includes(v)) heat++;
+      const p = valveView(hass, cfg, v).phase;
+      if (p === 'fast') fast++;
+      else if (p === 'run') run++;
+      else if (p === 'heat') heat++;
     }
     const parts = [fast && `${fast} rychlý start`, heat && `${heat} topí`, run && `${run} doběh`].filter(Boolean);
     return { fields: fieldsOf(hass, cfg, ['fast', 'bypass', 'margin', 'overrun', 'release'], ctx), now: `Hlavice teď: ${parts.length ? parts.join(', ') : 'žádná netopí'}.` };
@@ -770,7 +779,8 @@ const SETTINGS_TAB = {
     const fields = Object.values(SHARED_FIELDS).map(([id, def]) => numField(hass, id, def, ctx.nums)).filter(Boolean);
     const lowRows = at(hass, e('sensor', 'heating_low_batteries'), 'low_battery') ?? [];
     const low = new Set(lowRows.map((r) => r.climate).filter((c) => cfg.valves.includes(c))).size;
-    const all = cfg.valves.flatMap((v) => windowList(hass, cfg, v));
+    // one sensor can be listed under several valves: count it once
+    const all = [...new Map(cfg.valves.flatMap((v) => windowList(hass, cfg, v)).map((w) => [w.entity_id ?? w, w])).values()];
     const openWins = all.filter(isOpen).length;
     const boiler = hass.states?.[e('switch', 'boiler')];
     const bs = boiler?.state === 'on' ? 'zapnuto' : boiler?.state === 'off' ? 'vypnuto' : 'neznámý';
@@ -805,8 +815,8 @@ const fieldHtml = (f) => `<div class="soft field"><span class="fi">${svg(f.icon,
 const pickHtml = (f, control) => `<div class="soft field"><span class="fi">${svg(f.icon, 18)}</span>
     <div class="fl"><div class="lbl">${esc(f.label)}</div>${control}${f.help ? `<div class="help">${esc(f.help)}</div>` : ''}</div>
     <span class="go">${svg(ICON.chevron, 20)}</span></div>`;
-const sourceHtml = (s) => pickHtml(s, `<select class="pick fval t" data-act="pick" data-id="${esc(s.id)}" data-k="pick:${esc(s.id)}" aria-label="${esc(s.label)}">${
-  s.value ? '' : '<option value="" selected>— vyber čidlo —</option>'}${s.options.map((o) => `<option value="${esc(o.id)}"${o.id === s.value ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`);
+const sourceOptions = (s) => `${s.value ? '' : '<option value="" selected>— vyber čidlo —</option>'}${s.options.map((o) => `<option value="${esc(o.id)}"${o.id === s.value ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}`;
+const sourceHtml = (s) => pickHtml(s, `<select class="pick fval t" data-act="pick" data-id="${esc(s.id)}" data-k="pick:${esc(s.id)}" aria-label="${esc(s.label)}">${sourceOptions(s)}</select>`);
 const timeHtml = (t) => pickHtml(t, `<input class="pick fval t" type="time" value="${esc(t.value)}" data-act="pick" data-id="${esc(t.id)}" data-k="pick:${esc(t.id)}" aria-label="${esc(t.label)}">`);
 const fieldList = (fs) => `<div class="fields">${fs.map(fieldHtml).join('')}</div>`;
 const boldMode = (s) => esc(s).replace('Počasí', '<b>Počasí</b>');
@@ -851,8 +861,8 @@ const SETTINGS_BODY = {
 // The settings dialog in the frame's slots: {head, body}.
 export function settingsParts(v) {
   const tabs = `<div class="seg tabs ${v.tabs.length === 4 ? 'four' : ''}" role="tablist" aria-label="Oblast nastavení">${v.tabs.map((t) =>
-    `<button role="tab" aria-selected="${t.id === v.tab}" data-act="tab" data-val="${t.id}" data-k="tab:${t.id}"${t.id === v.tab ? ' class="on"' : ''}>${svg(t.icon, 16)}${t.label}</button>`).join('')}</div>`;
-  return { head: dialogHead('idle soft', ICON.cog, 'Nastavení', v.title), body: `${tabs}\n  ${SETTINGS_BODY[v.tab](v)}` };
+    `<button role="tab" id="set-tab-${t.id}" aria-controls="set-panel" aria-selected="${t.id === v.tab}" tabindex="${t.id === v.tab ? 0 : -1}" data-act="tab" data-val="${t.id}" data-k="tab:${t.id}"${t.id === v.tab ? ' class="on"' : ''}>${svg(t.icon, 16)}${t.label}</button>`).join('')}</div>`;
+  return { head: dialogHead('idle soft', ICON.cog, 'Nastavení', v.title), body: `${tabs}\n  <div class="tabpanel" role="tabpanel" id="set-panel" aria-labelledby="set-tab-${v.tab}">${SETTINGS_BODY[v.tab](v)}</div>` };
 }
 
 export const settingsHtml = (v) => { const p = settingsParts(v); return p.head + p.body; };
@@ -880,7 +890,7 @@ const DIALOGS = {
       const per = {
         rule: [e('input_select', 'heating_auto_rule'), e('input_number', 'heating_weather_threshold'), e('input_datetime', 'heating_time_from'),
           e('input_datetime', 'heating_time_to'), e('sensor', 'heating_weather_ok'), e('sensor', 'heating_outdoor_temperature'), OUTDOOR_SOURCE,
-          ...ctx.sources, st(hass, OUTDOOR_SOURCE)],
+          st(hass, OUTDOOR_SOURCE)], // only the selected source; the option labels refresh when the picker gets focus
         boiler: [...['heating_fast_start_delta', 'heating_bypass_threshold', 'heating_close_margin', 'heating_bypass_overrun', 'heating_release_check']
           .map((n) => e('input_number', n)), e('sensor', 'heating_valves')],
         windows: [e('input_number', 'heating_window_reminder'), e('sensor', 'heating_off_schedule'), ...cfg.valves],
@@ -1007,11 +1017,12 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .vd-tile .cap { font-size: 12px; color: var(--c-text2); margin-top: 2px; }
 /* settings dialog (V7-Settings*): every setting is a soft panel with an icon circle, label, value and − / + (or a native picker) */
 .seg.four { grid-template-columns: repeat(4, minmax(0, 1fr)); } .seg.tabs button { padding: 0 4px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.tabpanel { display: flex; flex-direction: column; gap: 14px; }
 .fields { display: flex; flex-direction: column; gap: 8px; } .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .field { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 8px 8px 8px; }
 .field.soft { background: var(--c-tile-bg); border: var(--c-tile-border); box-shadow: var(--c-tile-shadow); border-radius: var(--c-tile-radius); }
 .field .fl { flex: 1; min-width: 0; } .field .help { margin-top: 2px; }
-.fi { width: 32px; height: 32px; border-radius: 50%; background: var(--hfb-dot-idle, var(--c-card)); color: #607D8B; display: flex; align-items: center; justify-content: center; flex: none; align-self: flex-start; margin-top: 2px; }
+.fi { width: 32px; height: 32px; border-radius: 50%; background: var(--hfb-card, var(--card-background-color, #fff)); color: #607D8B; display: flex; align-items: center; justify-content: center; flex: none; align-self: flex-start; margin-top: 2px; }
 .fval { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; } .fval.t { font-size: 14px; font-weight: 600; }
 .pick { display: block; width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; color: var(--c-text); font: inherit; font-size: 14px; font-weight: 600; text-overflow: ellipsis; appearance: none; -webkit-appearance: none; }
 .go { width: 28px; height: 36px; display: flex; align-items: center; justify-content: center; color: var(--c-text2); flex: none; }
@@ -1062,11 +1073,23 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     root.addEventListener('keydown', (e) => this._key(e));
     // an open select must not be rebuilt: renders wait until it changes or loses focus
     // (every select / time input of the generic dialogs: the holiday calendar, the settings pickers)
-    const PICKER = '[data-act="calendar"], [data-act="pick"]';
-    root.addEventListener('focusin', (e) => { if (e.target.closest?.(PICKER)) this._selOpen = true; });
-    root.addEventListener('focusout', (e) => { if (e.target.closest?.(PICKER)) { this._selOpen = false; this._flushGeneric(); } });
-    root.addEventListener('change', (e) => { // the holiday calendar select, the settings pickers
-      const sel = e.target.closest?.(PICKER);
+    // A select defers renders from focus until it changes or blurs; a time input only while it is edited (`input` until blur / Enter),
+    // so a focused but idle control never freezes the dialog.
+    const SELECT = 'select[data-act="calendar"], select[data-act="pick"]';
+    const TIME = 'input[type="time"][data-act="pick"]';
+    root.addEventListener('focusin', (e) => {
+      const sel = e.target.closest?.(SELECT);
+      if (!sel) return;
+      if (sel.dataset.act === 'pick') this._refreshSources(sel);
+      this._selOpen = true;
+    });
+    root.addEventListener('focusout', (e) => {
+      if (e.target.closest?.(SELECT)) { this._selOpen = false; this._flushGeneric(); }
+      else if (e.target.closest?.(TIME)) this._commitTime(e.target);
+    });
+    root.addEventListener('input', (e) => { if (e.target.closest?.(TIME)) this._selOpen = true; });
+    root.addEventListener('change', (e) => { // the holiday calendar select, the outdoor source select
+      const sel = e.target.closest?.(SELECT);
       if (!sel) return;
       this._selOpen = false;
       setTimeout(() => this._flushGeneric(), 0);
@@ -1230,7 +1253,8 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     const pp = this._gdCtx.pending; // a tapped program is dropped once hass reports it or after PENDING_MS
     if (pp && (Date.now() - pp.at >= PENDING_MS || programId(hass, this._cfg) === pp.id)) this._gdCtx.pending = null;
     for (const [id, p] of Object.entries(this._gdCtx.nums)) { // so is a ± setting value
-      if (Date.now() - p.at >= PENDING_MS || num(st(hass, id)) === p.v) delete this._gdCtx.nums[id];
+      // dropped once hass reports *that* value after the send (a new state object), else after PENDING_MS
+      if (Date.now() - p.at >= PENDING_MS || (hass.states?.[id] !== p.s && num(st(hass, id)) === p.v)) delete this._gdCtx.nums[id];
     }
     this._gdDirty = false;
     const next = def.ids(hass, this._cfg, this._gdCtx).map((id) => hass.states?.[id]);
@@ -1299,6 +1323,24 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     return Promise.resolve(this._hass.callService(domain, service, data)).catch((e) => console.warn(`heating-card: ${domain}.${service} failed`, e));
   }
 
+  // The option labels of the outdoor source select (values of the candidates, new sensors) are read when it gets focus.
+  _refreshSources(sel) {
+    if (!this._cfg || !this._hass) return;
+    this._gdCtx.sources = outdoorSources(this._hass);
+    const v = settingsView(this._hass, this._cfg, 'rule', this._gdCtx);
+    if (v.source) sel.innerHTML = sourceOptions(v.source);
+  }
+
+  // A time input is written once, when its edit ends (blur / Enter), and only when the value changed.
+  _commitTime(el) {
+    this._selOpen = false;
+    if (el.value !== el.defaultValue && this._cfg) {
+      el.defaultValue = el.value;
+      this._pick(el.dataset.id, el.value);
+    }
+    setTimeout(() => this._flushGeneric(), 0);
+  }
+
   // A settings picker: the outdoor temperature source (input_text) or a rule time (input_datetime, HH:MM).
   _pick(id, value) {
     if (id.startsWith('input_text.') && value) this._call('input_text', 'set_value', { entity_id: id, value });
@@ -1338,7 +1380,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
       if (!f) return;
       const v = stepNum(f, Number(b.dataset.d));
       if (v === f.value) return;
-      this._gdCtx.nums[f.id] = { v, at: Date.now() };
+      this._gdCtx.nums[f.id] = { v, at: Date.now(), s: this._hass.states[f.id] }; // s = the state at send time
       this._call('input_number', 'set_value', { entity_id: f.id, value: v });
       clearTimeout(this._gpt);
       this._gpt = setTimeout(() => this._refreshGeneric(true), PENDING_MS + 50);
@@ -1402,6 +1444,18 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
   // Enter / Space: the tile's text runs the schedule action, the icon button the info action,
   // whatever gesture they are mapped to (only when not `none`).
   _key(e) {
+    if (e.key === 'Enter' && e.target.matches?.('input[type="time"][data-act="pick"]')) { this._commitTime(e.target); return; }
+    const tab = e.target.closest?.('[role="tab"]');
+    if (tab && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { // tab pattern: arrows / Home / End move focus and select
+      const all = [...this._gdlg.querySelectorAll('[role="tab"]')];
+      const i = all.indexOf(tab);
+      const to = all[e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length];
+      e.preventDefault();
+      this._gdCtx.tab = to.dataset.val;
+      this._refreshGeneric(true, true);
+      this._gdlg.querySelector(`[data-k="tab:${to.dataset.val}"]`)?.focus();
+      return;
+    }
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const el = e.target.closest?.('[data-zone]');
     const valve = e.target.closest?.('.main')?.dataset.valve;
