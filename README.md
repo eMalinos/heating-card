@@ -101,7 +101,7 @@ python3 -m http.server 8766 &
 
 ## Changelog
 
-- **0.1.1** — settings that are switched off show *Vypnuto*, dimmed: fast start below 0 (one − step from 0,0; needs HFB heating 1.14.0-beta.2, whose helper goes down to −0,1), pump overrun 0 min, window reminder 0 min.
+- **0.1.1** — settings that are switched off show *Vypnuto*, dimmed: fast start below 0 (one − step from 0,0; needs HFB heating 1.14.0-beta.3, whose helper goes down to −0,1), pump overrun 0 min, window reminder 0 min.
 - **0.1.0** — first release: circuit + valves boxes, valve, program, settings and statistics dialogs (Homecraft look, design rows v4–v7). Used by the HFB heating UI theme `homecraft`.
 - **0.1.0-beta.6** — statistics dialog (box 1 *Statistiky* button): Kotel (run time, degree-day normalisation, outdoor line) and Okna (boiler hours saved), Den / Týden / Měsíc / Rok with navigation and one comparison; fix: reopening the schedule dialog right after closing it no longer loses its content.
 - **0.1.0-beta.5** — settings dialog (box 1 *Nastavení* button): tabs Pravidlo / Kotel / Okna / Ostatní, immediate changes; new option `condensing_boiler` (default `true`; `false` hides the Kotel tab).

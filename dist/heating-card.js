@@ -660,7 +660,8 @@ export const outdoorSources = (hass) => Object.keys(hass.states ?? {}).filter((i
 const decimals = (step) => (String(step).split('.')[1] ?? '').length;
 
 // A number field from an input_number: value / unit / min / max / step come from its state; null when it is missing or not a number.
-// `def` = {label, icon, help, off}; `off(value)` true = the setting is switched off at that value (shown as Vypnuto, dimmed).
+// `def` = {label, icon, help, off, offHint}; `off(value)` true = the setting is switched off at that value (shown as Vypnuto,
+// dimmed); `offHint` is added to the help only when the helper's min reaches off (an older helper may stop at 0).
 // `pending` = {id: {v, at}}, a ± value sent but not yet reported (shown until hass reports it or PENDING_MS).
 export function numField(hass, id, def = {}, pending = {}, now = Date.now()) {
   const s = hass.states?.[id];
@@ -671,10 +672,12 @@ export function numField(hass, id, def = {}, pending = {}, now = Date.now()) {
   const p = pending[id];
   const shown = p && now - p.at < PENDING_MS ? p.v : value;
   const off = !!def.off?.(shown);
-  const unit = off ? '' : a.unit_of_measurement ?? '';
+  const unit = a.unit_of_measurement ?? '';
+  const min = num(a.min) ?? 0;
+  const help = def.help ?? `Krok ${fmt(step, decimals(step))}${unit ? ` ${unit}` : ''}`;
   return {
-    id, label: def.label, icon: def.icon, value: shown, off, text: off ? 'Vypnuto' : fmt(shown, decimals(step)), unit, min: num(a.min) ?? 0, max: num(a.max) ?? 100, step,
-    help: def.help ?? `Krok ${fmt(step, decimals(step))}${unit ? ` ${unit}` : ''}`,
+    id, label: def.label, icon: def.icon, value: shown, off, text: off ? T.phase.off : fmt(shown, decimals(step)), unit: off ? '' : unit, min, max: num(a.max) ?? 100, step,
+    help: def.offHint && def.off?.(min) ? `${help} ${def.offHint}` : help,
   };
 }
 
@@ -704,7 +707,7 @@ const isOpen = (w) => w.open === true || w.state === 'on';
 
 const SETTING_FIELDS = {
   threshold: ['input_number', 'heating_weather_threshold', { label: 'Topit pod venkovní teplotou', icon: ICON.thermoLow }],
-  fast: ['input_number', 'heating_fast_start_delta', { label: 'Rychlý start pod rozvrhem', icon: ICON.rocket, help: 'Hlavice otevře naplno, když je místnost o tolik pod cílem. Pod 0 = vypnuto.', off: (v) => v < 0 }],
+  fast: ['input_number', 'heating_fast_start_delta', { label: 'Rychlý start pod rozvrhem', icon: ICON.rocket, help: 'Hlavice otevře naplno, když je místnost o tolik pod cílem.', off: (v) => v < 0, offHint: 'Pod 0 = vypnuto.' }],
   bypass: ['input_number', 'heating_bypass_threshold', { label: 'Kotel topí pro hlavici otevřenou od', icon: ICON.valve, help: 'Menší otevření kotel nezapne (kromě rychlého startu).' }],
   margin: ['input_number', 'heating_close_margin', { label: 'Zavřít doběh nad rozvrhem', icon: ICON.thermoUp, help: 'Doběh skončí, když místnost přeteče o tolik nad cíl.' }],
   overrun: ['input_number', 'heating_bypass_overrun', { label: 'Doběh čerpadla', icon: ICON.pump, help: 'Poslední otevřená hlavice drží vodu v oběhu, než kotel dojede.', off: (v) => v <= 0 }],

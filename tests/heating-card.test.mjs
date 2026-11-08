@@ -483,6 +483,19 @@ test('numField: off(value) shows Vypnuto without a unit; fast start is off below
   assert.equal(numField(at(-0.1), id).off, false); // no off rule: a plain number
 });
 
+test('settings Kotel / Okna: the shipped off rules (fast below 0, overrun 0, reminder 0); the hint only where min reaches off', () => {
+  const set = (n, v, min = 0) => ({ [`input_number.${n}_${C}`]: { state: String(v), attributes: { min, max: 30, step: n.includes('delta') ? 0.1 : 1, unit_of_measurement: n.includes('delta') ? '°C' : 'min' } } });
+  const kotel = sv('boiler', { ...set('heating_fast_start_delta', -0.1, -0.1), ...set('heating_bypass_overrun', 0) });
+  const by = (label) => kotel.fields.find((f) => f.label === label);
+  assert.deepEqual([by('Rychlý start pod rozvrhem').text, by('Doběh čerpadla').text], ['Vypnuto', 'Vypnuto']);
+  assert.match(by('Rychlý start pod rozvrhem').help, /Pod 0 = vypnuto/);
+  assert.match(settingsHtml(kotel), /class="soft field is-off"/);
+  const old = sv('boiler', set('heating_fast_start_delta', 0));
+  assert.equal(old.fields[0].text, '0,0');
+  assert.doesNotMatch(old.fields[0].help, /Pod 0/); // helper min 0: off is out of reach
+  assert.equal(sv('windows', set('heating_window_reminder', 0)).fields.find((f) => f.label.startsWith('Připomenout')).text, 'Vypnuto');
+});
+
 test('stepNum: step, clamp, no float noise', () => {
   assert.equal(stepNum({ value: 15, step: 0.5, min: 5, max: 25 }, 1), 15.5);
   assert.equal(stepNum({ value: 25, step: 0.5, min: 5, max: 25 }, 1), 25);
