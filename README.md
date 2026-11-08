@@ -10,7 +10,7 @@ A Home Assistant card for one heating circuit, in the Homecraft look: a circuit 
 
 **HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/heating-card`, type **Dashboard** → download **Heating Card** → reload the browser.
 
-**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.0-beta.6`, type **JavaScript module**). Change `?v=` after copying a new version.
+**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.0`, type **JavaScript module**). Change `?v=` after copying a new version.
 
 ## Configuration
 
@@ -101,12 +101,13 @@ python3 -m http.server 8766 &
 
 ## Changelog
 
+- **0.1.0** — first release: circuit + valves boxes, valve, program, settings and statistics dialogs (Homecraft look, design rows v4–v7). Used by the HFB heating UI theme `homecraft`.
 - **0.1.0-beta.6** — statistics dialog (box 1 *Statistiky* button): Kotel (run time, degree-day normalisation, outdoor line) and Okna (boiler hours saved), Den / Týden / Měsíc / Rok with navigation and one comparison; fix: reopening the schedule dialog right after closing it no longer loses its content.
 - **0.1.0-beta.5** — settings dialog (box 1 *Nastavení* button): tabs Pravidlo / Kotel / Okna / Ostatní, immediate changes; new option `condensing_boiler` (default `true`; `false` hides the Kotel tab).
 - **0.1.0-beta.4** — program dialog (box 1 *Program* button): program list, applying progress, week alternation, holidays and calendar, *Srovnat hlavice* / *Upravit programy*; generic dialog frame for the settings and statistics dialogs.
 - **0.1.0-beta.3** — tiles, soft panels and window rows read `--hfb-tile-bg` / `-border` / `-shadow` / `-radius`, so they follow Bento's inner tile style.
 - **0.1.0-beta.2** — valve dialog (batteries, windows, 24 h chart, calibrate); `info_gesture` opens it instead of more-info.
-- **0.1.0** — circuit and valves boxes.
+- **0.1.0-beta.1** — circuit and valves boxes.
 
 ## License
 
