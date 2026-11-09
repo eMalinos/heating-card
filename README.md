@@ -10,7 +10,7 @@ A Home Assistant card for one heating circuit, in the Homecraft look: a circuit 
 
 **HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/heating-card`, type **Dashboard** → download **Heating Card** → reload the browser.
 
-**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.13`, type **JavaScript module**). Change `?v=` after copying a new version.
+**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.14`, type **JavaScript module**). Change `?v=` after copying a new version.
 
 ## Configuration
 
@@ -107,6 +107,7 @@ python3 -m http.server 8766 &
 
 ## Changelog
 
+- **0.1.14** — valve dialog: the valve name ends with its circuit part, `Obývák (Babi)` (HFB heating `use_parts`)
 - **0.1.13** — valve chart: labels every 0.5 °C up to a 4 °C span (whole degrees above), helper lines at the quarters more visible, the chart a bit taller so the labels breathe
 - **0.1.12** — valve chart: a tighter °C scale (0.2 °C around the room and the target, rounded to half a degree), labels every 0.5 / 1 °C by the span and unlabelled helper lines between them
 - **0.1.11** — valve chart: the phases (rychlý start, doběh, zavřeno) are tinted bands across the whole chart instead of a lane under it; dialogs scroll without a visible scrollbar

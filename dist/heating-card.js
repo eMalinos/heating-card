@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.13';
+const VERSION = '0.1.14';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -257,6 +257,7 @@ export function valveDetail(hass, cfg, climate, now = Date.now(), ids = deviceEn
   }
   return {
     view: v, title: cfg.heading || at(hass, eid(cfg, 'binary_sensor', 'heating_state'), 'title') || cfg.circuit,
+    part: valvePart(hass, cfg, climate),
     alert, windows, position, signal: sigId ? numeric(sigId) : null,
     calibration: calId ? st(hass, calId) === 'on' ? 'needed' : 'ok' : null,
     battery: batValue == null ? null : { value: batValue, low: batValue < threshold },
@@ -574,7 +575,7 @@ export function detailParts(d, chart = 'loading') {
   ];
   const dotCls = PHASE_DOT[v.phase];
   return {
-    head: headMain(`${dotCls}${dotCls === 'idle' || dotCls === 'dis' ? ' soft' : ''}`, PHASE_ICON[v.phase], v.name, d.title,
+    head: headMain(`${dotCls}${dotCls === 'idle' || dotCls === 'dis' ? ' soft' : ''}`, PHASE_ICON[v.phase], d.part ? `${v.name} (${d.part})` : v.name, d.title,
       badged ? `<span class="badge blink">${svg(ICON.battery, 12)}</span>` : ''),
     alert,
     now: `<div><div class="sub">Teplota teď · ${esc(v.word.toLowerCase())}</div><div><b class="hero">${v.now == null ? '–' : fmt(v.now, 1)}</b> <span class="unit big">°C</span></div></div>`,
@@ -655,18 +656,30 @@ export function cardParts(hass, cfg, pending = {}) {
   return { box1: box1Html(circuitView(hass, cfg)), summary: valvesSummary(views), tiles: views.map((v) => tileHtml(v, cfg)) };
 }
 
-// Box 2 tiles per part of the circuit (HFB heating use_parts: sensor.heating_parts_<c>, attribute parts = {id: name}).
-// A valve belongs to the part whose `<id>_` starts its object ID (the longest id wins); the rest go last under Ostatní.
+// The circuit's parts (HFB heating use_parts: sensor.heating_parts_<c>, attribute parts = {id: name}); a valve is in
+// the part whose `<id>_` starts its object ID (the longest id wins).
+const circuitParts = (hass, cfg) => {
+  const parts = at(hass, eid(cfg, 'sensor', 'heating_parts'), 'parts');
+  return parts && typeof parts === 'object' && !Array.isArray(parts) ? parts : {};
+};
+const partOf = (ids, v) => {
+  const obj = v.slice(v.indexOf('.') + 1);
+  return ids.filter((id) => obj.startsWith(`${id}_`)).sort((a, b) => b.length - a.length)[0];
+};
+// The name of the part a valve is in ('' outside any), as the valve dialog shows it after the valve's name.
+export function valvePart(hass, cfg, v) {
+  const parts = circuitParts(hass, cfg);
+  const id = partOf(Object.keys(parts), v);
+  return id === undefined ? '' : String(parts[id] || id);
+}
+
+// Box 2 tiles per part of the circuit; the rest go last under Ostatní.
 // No parts, or no valve in any part -> one unnamed group with every valve.
 export function valveGroups(hass, cfg) {
-  const parts = at(hass, eid(cfg, 'sensor', 'heating_parts'), 'parts');
-  const ids = parts && typeof parts === 'object' && !Array.isArray(parts) ? Object.keys(parts) : [];
+  const parts = circuitParts(hass, cfg);
+  const ids = Object.keys(parts);
   if (!ids.length) return [{ name: '', valves: cfg.valves }];
-  const partOf = (v) => {
-    const obj = v.slice(v.indexOf('.') + 1);
-    return ids.filter((id) => obj.startsWith(`${id}_`)).sort((a, b) => b.length - a.length)[0];
-  };
-  const of = Object.fromEntries(cfg.valves.map((v) => [v, partOf(v)]));
+  const of = Object.fromEntries(cfg.valves.map((v) => [v, partOf(ids, v)]));
   if (cfg.valves.every((v) => of[v] === undefined)) return [{ name: '', valves: cfg.valves }]; // no valve in any part
   return [...ids.map((id) => ({ name: String(parts[id] || id), valves: cfg.valves.filter((v) => of[v] === id) })),
     { name: 'Ostatní', valves: cfg.valves.filter((v) => of[v] === undefined) }].filter((g) => g.valves.length);

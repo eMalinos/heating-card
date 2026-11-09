@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { clockText, settingsView, settingsHtml, numField, stepNum, outdoorSources, programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural, signalWord, controlValue, controlHtml, targetControl, snapTarget, RULER_PX, tempColor, stepOf, fmtTarget, currentTarget, valveGroups } from '../dist/heating-card.js';
+import { clockText, settingsView, settingsHtml, numField, stepNum, outdoorSources, programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural, signalWord, controlValue, controlHtml, targetControl, snapTarget, RULER_PX, tempColor, stepOf, fmtTarget, currentTarget, valveGroups, valvePart, detailParts } from '../dist/heating-card.js';
 
 const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/states.json', import.meta.url), 'utf8'));
 const C = 'circuit_demo';
@@ -794,6 +794,16 @@ test('valveGroups: the longest matching id wins; empty groups are skipped', () =
 test('valveGroups: an empty part name falls back to its id; no valve in any part -> one unnamed group', () => {
   assert.deepEqual(valveGroups(world(parts({ flat1: '', flat2: 'Máma' })), PCFG).map((g) => g.name), ['flat1', 'Máma', 'Ostatní']);
   assert.deepEqual(valveGroups(world(parts({ flat3: 'Teta' })), PCFG), [{ name: '', valves: PV }]);
+});
+
+test('valvePart: the part name after the valve name in its dialog; none outside a part', () => {
+  const w = world(parts({ flat: 'Byt', flat1: 'Babi' }));
+  assert.equal(valvePart(w, PCFG, 'climate.flat1_bathroom_valve'), 'Babi');
+  assert.equal(valvePart(w, PCFG, 'climate.hall_valve'), '');
+  assert.equal(valvePart(world(), PCFG, 'climate.flat1_bathroom_valve'), '');
+  assert.match(detail(parts({ kitchen: 'Máma' })).part, /^Máma$/);
+  assert.match(detailParts(detail(parts({ kitchen: 'Máma' }))).head, /<h2 class="vd-title">[^<]* \(Máma\)<\/h2>/);
+  assert.doesNotMatch(detailParts(detail({})).head, /\(/);
 });
 
 test('cardHtml: part headings only for a circuit with parts', () => {
