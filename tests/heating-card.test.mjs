@@ -333,7 +333,7 @@ test('chartModel: lines, window bands, hour labels', () => {
   assert.equal(chartModel(rows, [{ rows: [{ lu: h(24), s: 'off' }, { lu: h(12), s: 'on' }], since: end - 12 * 3600000 }], end).bands[0].x, 220);
 });
 
-test('chartModel: the recorder drops min / max, so the limits come from the state; phases go to a lane under the time axis', () => {
+test('chartModel: the recorder drops min / max, so the limits come from the state; phases span the chart', () => {
   const end = Date.parse('2026-11-08T12:00:00');
   const h = (n) => (end - n * 3600000) / 1000;
   // like the real history: no min_temp / max_temp; 21 °C, fast start 6 h ago at 30, a window 4 h ago at 5, back to 21 at 2 h
@@ -344,10 +344,10 @@ test('chartModel: the recorder drops min / max, so the limits come from the stat
   assert.deepEqual(m.ticks.map((t) => t.text), ['18°', '19°', '20°', '21°', '22°']); // neither 30 nor 5 stretches it
   assert.deepEqual(m.phases, [{ k: 'fast', x: 330, w: 18.3 }, { k: 'run', x: 348.3, w: 36.7 }, { k: 'closed', x: 385, w: 18.3 }]); // run + overrun merge
   const html = detailHtml(detail({}), m);
-  assert.match(html, /viewBox="0 0 440 156"/); assert.match(html, /<rect class="ln-fast" x="330" y="144"/);
+  assert.match(html, /viewBox="0 0 440 140"/); assert.match(html, /<rect class="ph-band ln-fast" x="330" y="10" width="18.3" height="104">/);
   assert.match(html, /lg ln-fast"><\/i>rychlý start/); assert.match(html, /lg ln-run"><\/i>doběh/);
   const plain = chartModel(rows.slice(0, 1), [], end);
-  assert.deepEqual(plain.phases, []); assert.match(detailHtml(detail({}), plain), /viewBox="0 0 440 140"/);
+  assert.deepEqual(plain.phases, []); assert.doesNotMatch(detailHtml(detail({}), plain), /ph-band/);
 });
 
 test('signalWord', () => {

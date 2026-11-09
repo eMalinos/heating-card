@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.10';
+const VERSION = '0.1.11';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -270,7 +270,7 @@ export const signalWord = (dbm) => (dbm >= -70 ? 'Silný' : dbm >= -85 ? 'OK' : 
 // winRows = rows of every window sensor ({s: state, lu}); phaseRows = rows of sensor.heating_valves_<circuit> ({a: {phases}, lu});
 // lim = the valve's {min_temp, max_temp} now (the recorder keeps neither in the history).
 // Returns SVG path data, open-window spans in x units, the °C ticks (room + ordinary target) and the valve's phase
-// spans for a lane under the time axis (`phases`: fast / run / closed), or null without data.
+// spans drawn across the chart (`phases`: fast / run / closed), or null without data.
 export const CHART = { w: 440, top: 10, bottom: 114 };
 const CHART_BACK_MS = 24 * 3600000; // the window's length
 const CHART_MAX_BACK_MS = 7 * 24 * 3600000; // how far back it can be dragged (its start)
@@ -530,7 +530,7 @@ function chartHtml(m) {
   const has = (k) => m.phases?.some((p) => p.k === k);
   const legend = [m.bands.length && '<span><i class="lg win"></i>okno</span>',
     ...Object.entries(LANE_LABEL).map(([k, l]) => has(k) && `<span><i class="lg ln-${k}"></i>${l}</span>`)].filter(Boolean).join('');
-  const H = m.phases?.length ? 156 : 140; // the phase lane under the hour labels
+  const H = 140;
   const axis = (ts, cls) => `<div class="${cls}" aria-hidden="true">${ts.map((t) => `<span style="top: ${Math.round((t.y / H) * 1000) / 10}%">${t.text}</span>`).join('')}</div>`;
   const at = (t) => { const d = new Date(t); return `${d.getDate()}. ${d.getMonth() + 1}. ${d.getHours()}:00`; };
   const nav = `<div class="ch-nav"><span>${m.live ? 'Posledních 24 h' : `${at(view.start)} – ${at(view.end)}`}</span>
@@ -542,12 +542,12 @@ function chartHtml(m) {
   return `${nav}<div class="ch-box">${axis(m.ticks, 'ch-y')}
   <div class="ch-view"><svg viewBox="0 0 ${W} ${H}" style="width: ${Math.round((W / CHART.w) * 10000) / 100}%; transform: translateX(-${shift}%)" data-shift="${shift}" role="img" aria-label="Teplota a cíl, táhni do stran pro posun v čase" class="ch-svg">
   ${m.ticks.map((t) => `<line x1="0" y1="${t.y}" x2="${W}" y2="${t.y}" class="grid-l"></line>`).join('')}
+  ${(m.phases ?? []).map((p) => `<rect class="ph-band ln-${p.k}" x="${p.x}" y="${CHART.top}" width="${p.w}" height="${CHART.bottom - CHART.top}"></rect>`).join('')}
   ${m.bands.map((b) => `<rect class="band" x="${b.x}" y="${CHART.top}" width="${b.w}" height="${CHART.bottom - CHART.top}" rx="4"></rect>`).join('')}
   <line x1="0" y1="${CHART.bottom}" x2="${W}" y2="${CHART.bottom}" style="stroke: var(--c-border)"></line>
   ${m.target ? `<path d="${m.target}" fill="none" style="stroke: var(--disabled-text-color, #a9afb7)" stroke-width="2" stroke-dasharray="4 4"></path>` : ''}
   <path d="${m.current}" fill="none" stroke="#E8592C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
   ${m.labels.map((l) => `<text x="${Math.min(l.x, W - 28)}" y="132" ${font}>${l.text}</text>`).join('')}
-  ${(m.phases ?? []).map((p) => `<rect class="ln-${p.k}" x="${p.x}" y="144" width="${p.w}" height="8" rx="3"></rect>`).join('')}
 </svg></div></div>${legend ? `<div class="legend">${legend}</div>` : ''}`;
 }
 
@@ -1585,11 +1585,7 @@ button.dot { border: 0; padding: 0; cursor: pointer; font: inherit; }
 @media (prefers-reduced-motion: reduce) { .flame, .blink, .spin { animation: none; } }
 dialog { border: 0; border-radius: 24px; padding: 0; width: min(560px, 94vw); max-height: 90vh; background: var(--c-card); color: var(--c-text); }
 dialog::backdrop { background: rgba(0, 0, 0, .4); }
-/* a thin rounded thumb in a soft text colour, no track (standard props for Chrome / Firefox, ::-webkit for Safari) */
-dialog { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--c-text2) 40%, transparent) transparent; }
-dialog::-webkit-scrollbar { width: 10px; }
-dialog::-webkit-scrollbar-track { background: transparent; margin: 20px 0; }
-dialog::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--c-text2) 40%, transparent); border: 3px solid transparent; border-radius: 10px; background-clip: padding-box; }
+dialog { scrollbar-width: none; } dialog::-webkit-scrollbar { display: none; } /* still scrolls (wheel, touch, keys), no bar across the rounded corners */
 .dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 0 20px; font-size: 18px; font-weight: 500; }
 .dlg-body { padding: 8px 12px 16px; }
 .dlg-head .x { width: 40px; height: 40px; }
@@ -1659,6 +1655,7 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .legend { display: flex; gap: 12px; font-size: 11px; color: var(--c-text2); margin-top: 4px; } .legend span { display: inline-flex; align-items: center; gap: 4px; }
 .lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; } .lg.win { background: color-mix(in srgb, var(--info-color, #0a84ff) 30%, transparent); }
 .ln-fast { fill: #FF7A38; background: #FF7A38; } .ln-run { fill: var(--primary-color, #4f6b8c); background: var(--primary-color, #4f6b8c); } .ln-closed { fill: #9AA9B1; background: #9AA9B1; }
+.ph-band { opacity: .2; } .lg[class*="ln-"] { opacity: .45; } /* a phase across the whole chart, under the window bands and the lines */
 .chart-msg { font-size: 12px; color: var(--c-text2); padding: 40px 0; text-align: center; }
 .vd-h { font-size: 13px; font-weight: 600; margin-bottom: -6px; }
 .vd-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
