@@ -644,7 +644,7 @@ export function cardParts(hass, cfg, pending = {}) {
 
 // Box 2 tiles per part of the circuit (HFB heating use_parts: sensor.heating_parts_<c>, attribute parts = {id: name}).
 // A valve belongs to the part whose `<id>_` starts its object ID (the longest id wins); the rest go last under Ostatní.
-// No parts -> one unnamed group with every valve.
+// No parts, or no valve in any part -> one unnamed group with every valve.
 export function valveGroups(hass, cfg) {
   const parts = at(hass, eid(cfg, 'sensor', 'heating_parts'), 'parts');
   const ids = parts && typeof parts === 'object' && !Array.isArray(parts) ? Object.keys(parts) : [];
@@ -654,7 +654,8 @@ export function valveGroups(hass, cfg) {
     return ids.filter((id) => obj.startsWith(`${id}_`)).sort((a, b) => b.length - a.length)[0];
   };
   const of = Object.fromEntries(cfg.valves.map((v) => [v, partOf(v)]));
-  return [...ids.map((id) => ({ name: String(parts[id] ?? id), valves: cfg.valves.filter((v) => of[v] === id) })),
+  if (cfg.valves.every((v) => of[v] === undefined)) return [{ name: '', valves: cfg.valves }]; // no valve in any part
+  return [...ids.map((id) => ({ name: String(parts[id] || id), valves: cfg.valves.filter((v) => of[v] === id) })),
     { name: 'Ostatní', valves: cfg.valves.filter((v) => of[v] === undefined) }].filter((g) => g.valves.length);
 }
 
@@ -1956,7 +1957,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     this._wrap.querySelectorAll('.grid').forEach((el) => el.classList.toggle('stack', stack));
     // each slot gets its own valve's tile (slots are in group order, tiles in cfg.valves order)
     const tile = Object.fromEntries(this._cfg.valves.map((v, i) => [v, parts.tiles[i]]));
-    this._wrap.querySelectorAll('.tw').forEach((el, i) => this._set(el, tile[el.dataset.v], `t${i}`));
+    this._wrap.querySelectorAll('.tw').forEach((el) => this._set(el, tile[el.dataset.v], `t:${el.dataset.v}`));
     this._refreshDialog(true);
   }
 

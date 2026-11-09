@@ -785,6 +785,11 @@ test('valveGroups: the longest matching id wins; empty groups are skipped', () =
   ]);
 });
 
+test('valveGroups: an empty part name falls back to its id; no valve in any part -> one unnamed group', () => {
+  assert.deepEqual(valveGroups(world(parts({ flat1: '', flat2: 'Máma' })), PCFG).map((g) => g.name), ['flat1', 'Máma', 'Ostatní']);
+  assert.deepEqual(valveGroups(world(parts({ flat3: 'Teta' })), PCFG), [{ name: '', valves: PV }]);
+});
+
 test('cardHtml: part headings only for a circuit with parts', () => {
   const html = cardHtml(world(parts({ flat1: 'Babi', flat2: 'Máma' })), PCFG);
   assert.deepEqual([...html.matchAll(/<div class="gh">([^<]*)<\/div>/g)].map((m) => m[1]), ['Babi', 'Máma', 'Ostatní']);
