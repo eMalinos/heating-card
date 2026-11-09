@@ -10,7 +10,7 @@ A Home Assistant card for one heating circuit, in the Homecraft look: a circuit 
 
 **HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/heating-card`, type **Dashboard** → download **Heating Card** → reload the browser.
 
-**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.6`, type **JavaScript module**). Change `?v=` after copying a new version.
+**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.7`, type **JavaScript module**). Change `?v=` after copying a new version.
 
 ## Configuration
 
@@ -37,6 +37,10 @@ Entities read (`<c>` is the circuit): `switch.boiler_<c>`, `input_select.heating
 The middle mode segment reads *Čas* (clock icon) instead of *Počasí* while the rule (`input_select.heating_auto_rule_<c>`) is `time`.
 
 Actions: the mode segments call `input_select.select_option`, the cross on the status message clears `input_text.heating_status_<c>`, **Srovnat** presses `input_button.heating_sync_<c>`, − / + change a valve's target by the step in `input_number.heating_target_step_<c>` (settings › Ostatní › Krok cíle hlavice; 0.5 °C without it; not on a valve with an open window or while the circuit is off). The **Statistiky** button opens the statistics dialog; `schedule_gesture` opens `heating-schedule-card` in a simple dialog.
+
+### Parts of a circuit
+
+When the circuit is split into parts (HFB heating 1.16 with `use_parts`, e.g. one boiler for two flats), the valve tiles are grouped per part under its name, read from `sensor.heating_parts_<c>`; valves in no part come last under *Ostatní*. Without that sensor the box looks as before. No card option is needed.
 
 ## Valve dialog
 
@@ -103,6 +107,7 @@ python3 -m http.server 8766 &
 
 ## Changelog
 
+- **0.1.7** — valve tiles grouped per part of the circuit under the part's name, part-less ones under *Ostatní* (`sensor.heating_parts_<c>`, HFB heating 1.16 `use_parts`); a circuit without parts looks as before
 - **0.1.6** — valve dialog target controls as design v8: one box with the target in it (arc: Cíl, big target, °C · teď in the middle, − krok + below; ruler: big target in its temperature colour on top, − teď · krok + below; track: Cíl + target with − / + on top), the target row hides; chart: the °C axis comes from the room and the ordinary target only, fast start's target is drawn on a right axis over the valve's range; settings › Ostatní: *Název hlavice na dlaždici* (beside / under the icon, `input_select.heating_tile_layout_<c>`, heating 1.15.0-beta.3)
 - **0.1.5** — valve tiles: three a row from a ~470 px card (tile minimum 136 px instead of 160 px); names and states wrap instead of being cut off, the temperature keeps its °C, the − / + row sits at the tile's bottom
 - **0.1.4** — valve dialog: no overrun in the chart; the arc / ruler / track slider sits on a tile background and replaces the − / + (only *Tlačítka* keep them); settings: the target control picker shows a small picture of each control, the boiler tile shows its friendly name, every boiler setting shows *Vypnuto* at its off value (bypass threshold 0, close margin below 0, overrun 0, release check 0; close margin below 0 needs heating 1.15.0-beta.2)

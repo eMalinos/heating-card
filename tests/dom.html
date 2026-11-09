@@ -670,6 +670,24 @@
   host4.appendChild(card); await tick(50);
   globalThis.Date = RealDate;
 
+  // parts of a circuit (#16): tiles grouped under part headings, the skeleton rebuilt when the parts appear, ± patches its own valve
+  const pv = { 'climate.flat2_kitchen': ['Kuchyň máma', 20], 'climate.hall': ['Chodba dole', 19], 'climate.flat1_bath': ['Koupelna babi', 22] };
+  const pStates = { ...states };
+  for (const [id, [name, t]] of Object.entries(pv)) pStates[id] = { state: 'heat', attributes: { friendly_name: name, current_temperature: t - 1, temperature: t, min_temp: 5, max_temp: 30 } };
+  const partCard = document.createElement('heating-card');
+  partCard.setConfig({ circuit: C, valves: Object.keys(pv) });
+  partCard.hass = { ...hass, states: pStates };
+  document.getElementById('box').appendChild(partCard); await tick(100);
+  const pr = partCard.shadowRoot, pq = (s) => [...pr.querySelectorAll(s)];
+  r.partsNone = pq('.gh').length === 0 && pq('.grid').length === 1 && pq('.tile').length === 3;
+  partCard.hass = { ...hass, states: { ...pStates, [`sensor.heating_parts_${C}`]: { state: '2', attributes: { parts: { flat1: 'Babi', flat2: 'Máma' } } } } }; await tick();
+  r.partsGroups = pq('.gh').map((e) => e.textContent).join() === 'Babi,Máma,Ostatní' && pq('.grid').length === 3
+    && pq('.tw').map((e) => e.dataset.v).join() === 'climate.flat1_bath,climate.flat2_kitchen,climate.hall' && pq('.tile .name')[0].textContent.includes('Koupelna babi');
+  pq('.tile')[0].querySelector('[data-d="1"]').click(); await tick();
+  r.partsStep = calls.at(-1).data.entity_id === 'climate.flat1_bath' && calls.at(-1).data.temperature === 22.5
+    && pq('.tile .val')[0].textContent.replace(/\s/g, ' ') === '22,5 °C' && pq('.tile .val')[2].textContent.replace(/\s/g, ' ') === '19,0 °C';
+  partCard.remove();
+
   r.noErrors = errors.length === 0;
   const ok = Object.values(r).every(Boolean);
   document.getElementById('out').textContent = 'RESULT ' + (ok ? 'OK ' : 'FAIL ') + JSON.stringify(r) + (errors.length ? ' ERRORS ' + JSON.stringify(errors) : '');
