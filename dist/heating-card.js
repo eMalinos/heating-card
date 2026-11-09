@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.8';
+const VERSION = '0.1.9';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -1567,6 +1567,11 @@ button.dot { border: 0; padding: 0; cursor: pointer; font: inherit; }
 @media (prefers-reduced-motion: reduce) { .flame, .blink, .spin { animation: none; } }
 dialog { border: 0; border-radius: 24px; padding: 0; width: min(560px, 94vw); max-height: 90vh; background: var(--c-card); color: var(--c-text); }
 dialog::backdrop { background: rgba(0, 0, 0, .4); }
+/* a thin rounded thumb in a soft text colour, no track (standard props for Chrome / Firefox, ::-webkit for Safari) */
+dialog { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--c-text2) 40%, transparent) transparent; }
+dialog::-webkit-scrollbar { width: 10px; }
+dialog::-webkit-scrollbar-track { background: transparent; margin: 20px 0; }
+dialog::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--c-text2) 40%, transparent); border: 3px solid transparent; border-radius: 10px; background-clip: padding-box; }
 .dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 0 20px; font-size: 18px; font-weight: 500; }
 .dlg-body { padding: 8px 12px 16px; }
 .dlg-head .x { width: 40px; height: 40px; }
