@@ -121,7 +121,7 @@
     return Object.fromEntries(msg.entity_ids.map((id) => [id, id.startsWith('sensor.heating_valves_')
       ? [{ lu: h(24), a: ph('normal') }, { lu: h(10), a: ph('fast') }, { lu: h(8), a: ph('normal') }, { lu: h(4), a: ph('overrun') }, { lu: h(3.5), a: ph('normal') }]
       : id.startsWith('climate.')
-      ? [{ lu: h(24), a: { current_temperature: 19, temperature: 18 } }, { lu: h(10), a: { current_temperature: 20.5, temperature: 21 } }, { lu: h(1), a: { current_temperature: 19.6 } }]
+      ? [{ lu: h(24), a: { current_temperature: 19, temperature: 18 } }, { lu: h(10), a: { current_temperature: 20.5, temperature: 30 } }, { lu: h(8), a: { temperature: 21 } }, { lu: h(4), a: { temperature: 30 } }, { lu: h(3.5), a: { temperature: 21 } }, { lu: h(1), a: { current_temperature: 19.6 } }] // like the recorder: no min / max
       : (id === 'binary_sensor.kids_window' ? [{ lu: h(24), s: 'on' }] : [{ lu: h(24), s: 'off' }])]));
   };
   const confirms = [];

@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.9';
+const VERSION = '0.1.10';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -267,21 +267,23 @@ export function valveDetail(hass, cfg, climate, now = Date.now(), ids = deviceEn
 export const signalWord = (dbm) => (dbm >= -70 ? 'Silný' : dbm >= -85 ? 'OK' : 'Slabý');
 
 // Chart geometry over `hours` ending at `end` (24 h = CHART.w wide). rows = history/history_during_period rows of the climate ({a: attributes, lu: epoch s}),
-// winRows = rows of every window sensor ({s: state, lu}).
-// Returns SVG path data, open-window spans in x units and the °C ticks (room + ordinary target), or null without data.
+// winRows = rows of every window sensor ({s: state, lu}); phaseRows = rows of sensor.heating_valves_<circuit> ({a: {phases}, lu});
+// lim = the valve's {min_temp, max_temp} now (the recorder keeps neither in the history).
+// Returns SVG path data, open-window spans in x units, the °C ticks (room + ordinary target) and the valve's phase
+// spans for a lane under the time axis (`phases`: fast / run / closed), or null without data.
 export const CHART = { w: 440, top: 10, bottom: 114 };
 const CHART_BACK_MS = 24 * 3600000; // the window's length
 const CHART_MAX_BACK_MS = 7 * 24 * 3600000; // how far back it can be dragged (its start)
 const ts = (r) => { const t = r.lu ?? r.lc; return typeof t === 'number' ? t * 1000 : Date.parse(t); };
 // wins = [{rows, since}]: a window's history rows ({s, lu}) and, for an open window, when it opened (`since`).
-export function chartModel(rows, wins, end, hours = 24, now = end) {
+export function chartModel(rows, wins, end, hours = 24, now = end, { lim = {}, phaseRows = [], climate = '' } = {}) {
   const start = end - hours * 3600000;
   const W = (CHART.w * hours) / 24; // 24 h = CHART.w; a longer span is wider (the dialog shows 24 h of it and pans)
   const last = Math.min(end, now); // nothing is drawn past now
   const x = (t) => Math.round(((Math.min(end, Math.max(start, t)) - start) / (end - start)) * W * 10) / 10;
   // a target at the valve's max or at its min / 5 °C (each row's own range) is Node-RED forcing it (fast start, run,
   // overrun at max; window, closed at 5 °C even on a valve whose min is 4): left out of the line and the scale
-  let cur = null, tgt = null, raw = null, lo = -Infinity, hi = Infinity;
+  let cur = null, tgt = null, raw = null, lo = num(lim.min_temp) ?? -Infinity, hi = num(lim.max_temp) ?? Infinity;
   const pts = [];
   for (const { r, t } of (rows ?? []).map((r) => ({ r, t: ts(r) })).filter((p) => Number.isFinite(p.t) && p.t <= last).sort((a, b) => a.t - b.t)) {
     lo = num(r.a?.min_temp) ?? lo; hi = num(r.a?.max_temp) ?? hi;
@@ -326,11 +328,22 @@ export function chartModel(rows, wins, end, hours = 24, now = end) {
     if (h % 6 === 0) labels.push({ x: x(t), text: h ? `${h}:00` : `${new Date(t).getDate()}. ${new Date(t).getMonth() + 1}.` });
   }
   const band = ([a, b]) => ({ x: x(a), w: Math.max(2, Math.round((x(b) - x(a)) * 10) / 10) });
+  // the valve's phases: each holds until the next row of the sensor; overrun draws as run (the tile's Doběh too)
+  const LANE = { fast: 'fast', run: 'run', overrun: 'run', closed: 'closed' };
+  const ph = (phaseRows ?? []).map((r) => ({ t: ts(r), k: LANE[r.a?.phases?.[climate]?.[0]] ?? null })).filter((p) => Number.isFinite(p.t) && p.t <= last).sort((a, b) => a.t - b.t);
+  const phases = [];
+  ph.forEach((p, i) => {
+    const b = ph[i + 1]?.t ?? last;
+    if (!p.k || b <= start) return;
+    const prev = phases.at(-1);
+    if (prev?.k === p.k && prev.b === p.t) prev.b = b; else phases.push({ k: p.k, a: p.t, b });
+  });
   const step = yHi - yLo > 6 ? 2 : 1;
   const ticks = [];
   for (let n = Math.ceil(yLo / step) * step; n <= yHi; n += step) ticks.push({ y: y(n), text: `${n}°` });
   return {
     start, end, w: W, current: line('cur', false), target: line('tgt', true), bands: merged.map(band), labels, ticks,
+    phases: phases.map((p) => ({ k: p.k, ...band([p.a, p.b]) })),
   };
 }
 
@@ -510,11 +523,15 @@ function tileHtml(v, cfg) {
 const WINDOW_CLOSED = 'M21 20V2H3V20H1V23H23V20M19 4V11H13V4M5 4H11V11H5M5 20V13H11V20M13 20V13H19V20Z';
 const BATTERY_PLAIN = 'M16.67,4H15V2H9V4H7.33A1.33,1.33 0 0,0 6,5.33V20.67C6,21.4 6.6,22 7.33,22H16.67A1.33,1.33 0 0,0 18,20.67V5.33C18,4.6 17.4,4 16.67,4Z';
 
+const LANE_LABEL = { fast: 'rychlý start', run: 'doběh', closed: 'zavřeno' };
 function chartHtml(m) {
   const font = 'font-size="11" style="fill: var(--c-text2)"';
   const W = m.w ?? CHART.w, view = m.view ?? { start: m.start, end: m.end };
-  const legend = [m.bands.length && '<span><i class="lg win"></i>okno</span>'].filter(Boolean).join('');
-  const axis = (ts, cls) => `<div class="${cls}" aria-hidden="true">${ts.map((t) => `<span style="top: ${Math.round((t.y / 140) * 1000) / 10}%">${t.text}</span>`).join('')}</div>`;
+  const has = (k) => m.phases?.some((p) => p.k === k);
+  const legend = [m.bands.length && '<span><i class="lg win"></i>okno</span>',
+    ...Object.entries(LANE_LABEL).map(([k, l]) => has(k) && `<span><i class="lg ln-${k}"></i>${l}</span>`)].filter(Boolean).join('');
+  const H = m.phases?.length ? 156 : 140; // the phase lane under the hour labels
+  const axis = (ts, cls) => `<div class="${cls}" aria-hidden="true">${ts.map((t) => `<span style="top: ${Math.round((t.y / H) * 1000) / 10}%">${t.text}</span>`).join('')}</div>`;
   const at = (t) => { const d = new Date(t); return `${d.getDate()}. ${d.getMonth() + 1}. ${d.getHours()}:00`; };
   const nav = `<div class="ch-nav"><span>${m.live ? 'Posledních 24 h' : `${at(view.start)} – ${at(view.end)}`}</span>
     <button class="x" data-act="chartNav" data-d="-1" data-k="chart:-1" aria-label="O 6 hodin zpět"${m.oldest ? ' disabled' : ''}>${stroke('M15 6l-6 6 6 6', 16)}</button>
@@ -523,13 +540,14 @@ function chartHtml(m) {
   // the svg is W / CHART.w times the view's width, shifted so the view shows view.start..view.end
   const shift = Math.round(((view.start - m.start) / (m.end - m.start)) * 10000) / 100;
   return `${nav}<div class="ch-box">${axis(m.ticks, 'ch-y')}
-  <div class="ch-view"><svg viewBox="0 0 ${W} 140" style="width: ${Math.round((W / CHART.w) * 10000) / 100}%; transform: translateX(-${shift}%)" data-shift="${shift}" role="img" aria-label="Teplota a cíl, táhni do stran pro posun v čase" class="ch-svg">
+  <div class="ch-view"><svg viewBox="0 0 ${W} ${H}" style="width: ${Math.round((W / CHART.w) * 10000) / 100}%; transform: translateX(-${shift}%)" data-shift="${shift}" role="img" aria-label="Teplota a cíl, táhni do stran pro posun v čase" class="ch-svg">
   ${m.ticks.map((t) => `<line x1="0" y1="${t.y}" x2="${W}" y2="${t.y}" class="grid-l"></line>`).join('')}
   ${m.bands.map((b) => `<rect class="band" x="${b.x}" y="${CHART.top}" width="${b.w}" height="${CHART.bottom - CHART.top}" rx="4"></rect>`).join('')}
   <line x1="0" y1="${CHART.bottom}" x2="${W}" y2="${CHART.bottom}" style="stroke: var(--c-border)"></line>
   ${m.target ? `<path d="${m.target}" fill="none" style="stroke: var(--disabled-text-color, #a9afb7)" stroke-width="2" stroke-dasharray="4 4"></path>` : ''}
   <path d="${m.current}" fill="none" stroke="#E8592C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
   ${m.labels.map((l) => `<text x="${Math.min(l.x, W - 28)}" y="132" ${font}>${l.text}</text>`).join('')}
+  ${(m.phases ?? []).map((p) => `<rect class="ln-${p.k}" x="${p.x}" y="144" width="${p.w}" height="8" rx="3"></rect>`).join('')}
 </svg></div></div>${legend ? `<div class="legend">${legend}</div>` : ''}`;
 }
 
@@ -1640,6 +1658,7 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; }
 .legend { display: flex; gap: 12px; font-size: 11px; color: var(--c-text2); margin-top: 4px; } .legend span { display: inline-flex; align-items: center; gap: 4px; }
 .lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; } .lg.win { background: color-mix(in srgb, var(--info-color, #0a84ff) 30%, transparent); }
+.ln-fast { fill: #FF7A38; background: #FF7A38; } .ln-run { fill: var(--primary-color, #4f6b8c); background: var(--primary-color, #4f6b8c); } .ln-closed { fill: #9AA9B1; background: #9AA9B1; }
 .chart-msg { font-size: 12px; color: var(--c-text2); padding: 40px 0; text-align: center; }
 .vd-h { font-size: 13px; font-weight: 600; margin-bottom: -6px; }
 .vd-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -2163,11 +2182,12 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     let raw = null;
     try {
       const wl = windowList(this._hass, this._cfg, climate);
+      const valvesId = eid(this._cfg, 'sensor', 'heating_valves');
       const res = await this._hass.callWS({
         type: 'history/history_during_period', start_time: new Date(from).toISOString(), end_time: new Date(to).toISOString(),
-        entity_ids: [climate, ...wl.map((w) => w.entity_id)], include_start_time_state: true, significant_changes_only: false, minimal_response: false, no_attributes: false,
+        entity_ids: [climate, valvesId, ...wl.map((w) => w.entity_id)], include_start_time_state: true, significant_changes_only: false, minimal_response: false, no_attributes: false,
       });
-      raw = { climate, res, wl, from, to };
+      raw = { climate, res, wl, valvesId, from, to };
     } catch (e) { /* keep what was loaded */ }
     if (seq !== this._seq || climate !== this._vd) return;
     if (raw || this._chartRaw?.climate !== climate) this._chartRaw = raw;
@@ -2194,9 +2214,9 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
       return; // still loading: the old chart (or the loading note) stays
     }
     const mStart = end - 2 * CHART_BACK_MS, mEnd = Math.min(now, end + CHART_BACK_MS);
-    const { res, wl } = raw;
+    const { res, wl, valvesId } = raw;
     let chart = chartModel(res?.[raw.climate], wl.map((w) => ({ rows: res?.[w.entity_id], since: w.open === true || w.state === 'on' ? sinceMs(w) : null })),
-      mEnd, (mEnd - mStart) / 3600000, now) ?? 'none';
+      mEnd, (mEnd - mStart) / 3600000, now, { lim: this._hass?.states?.[raw.climate]?.attributes ?? {}, phaseRows: res?.[valvesId], climate: raw.climate }) ?? 'none';
     if (chart !== 'none') Object.assign(chart, { live, view: { start: end - CHART_BACK_MS, end }, oldest: !live && end - CHART_BACK_MS <= now - CHART_MAX_BACK_MS });
     this._chart = chart;
     this._refreshDialog(true);
