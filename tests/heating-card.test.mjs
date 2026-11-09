@@ -341,15 +341,17 @@ test('chartModel: the recorder drops min / max, so the limits come from the stat
   const ph = (p) => ({ phases: { [K]: [p], 'climate.other': ['fast'] } });
   const phaseRows = [{ lu: h(30), a: ph('normal') }, { lu: h(6), a: ph('fast') }, { lu: h(5), a: ph('run') }, { lu: h(4.5), a: ph('overrun') }, { lu: h(3), a: ph('closed') }, { lu: h(2), a: ph('normal') }];
   const m = chartModel(rows, [], end, 24, end, { lim: { min_temp: 4, max_temp: 30 }, phaseRows, climate: K });
-  assert.deepEqual(m.ticks.map((t) => t.text), ['19°', '20°', '21°']); // neither 30 nor 5 stretches it; 18,5–21,5
-  assert.equal(m.minor.length, 4); // helper lines at 18,5 … 21,5
+  assert.deepEqual(m.ticks.map((t) => t.text), ['18,5°', '19°', '19,5°', '20°', '20,5°', '21°', '21,5°']); // neither 30 nor 5 stretches it
+  assert.equal(m.minor.length, 6); // helper lines at the quarters
+  const wide = chartModel([{ lu: h(24), a: { current_temperature: 19.2, temperature: 21 } }, { lu: h(2), a: { current_temperature: 23.9 } }], [], end);
+  assert.deepEqual(wide.ticks.map((t) => t.text), ['19°', '20°', '21°', '22°', '23°', '24°']); // over 4 °C: whole degrees
   // a narrow span: labels every half degree, helpers at the quarters
   const narrow = chartModel([{ lu: h(24), a: { current_temperature: 20.1, temperature: 20.5 } }, { lu: h(2), a: { current_temperature: 21 } }], [], end);
   assert.deepEqual(narrow.ticks.map((t) => t.text), ['19,5°', '20°', '20,5°', '21°', '21,5°']);
   assert.equal(narrow.minor.length, 4);
   assert.deepEqual(m.phases, [{ k: 'fast', x: 330, w: 18.3 }, { k: 'run', x: 348.3, w: 36.7 }, { k: 'closed', x: 385, w: 18.3 }]); // run + overrun merge
   const html = detailHtml(detail({}), m);
-  assert.match(html, /viewBox="0 0 440 140"/); assert.match(html, /<rect class="ph-band ln-fast" x="330" y="10" width="18.3" height="104">/);
+  assert.match(html, /viewBox="0 0 440 170"/); assert.match(html, /<rect class="ph-band ln-fast" x="330" y="10" width="18.3" height="134">/);
   assert.match(html, /lg ln-fast"><\/i>rychlý start/); assert.match(html, /lg ln-run"><\/i>doběh/);
   const plain = chartModel(rows.slice(0, 1), [], end);
   assert.deepEqual(plain.phases, []); assert.doesNotMatch(detailHtml(detail({}), plain), /ph-band/);
@@ -754,7 +756,7 @@ test('chartModel: forced targets (max / min) leave the line and the y scale; 72 
   const a = (cur, t) => ({ current_temperature: cur, temperature: t, min_temp: 5, max_temp: 30 });
   const rows = [{ lu: h(24), a: a(19, 20) }, { lu: h(12), a: a(19.5, 30) }, { lu: h(10), a: a(20.5, 21) }, { lu: h(6), a: a(20, 5) }, { lu: h(4), a: a(19.8, 21) }];
   const m = chartModel(rows, [], end);
-  assert.deepEqual(m.ticks.map((t) => t.text), ['19°', '20°', '21°']); // no 5° … 30°
+  assert.deepEqual(m.ticks.map((t) => t.text), ['18,5°', '19°', '19,5°', '20°', '20,5°', '21°', '21,5°']); // no 5° … 30°
   assert.equal((m.target.match(/M/g) ?? []).length, 3); // three pieces around the two forced spans
   assert.match(m.target, /^M0 \S+ H220 M256\.7 /); // stops where 30 starts, resumes at 21
   const wide = chartModel(rows, [], end + 24 * 3600000, 72, end);

@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.12';
+const VERSION = '0.1.13';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -271,7 +271,7 @@ export const signalWord = (dbm) => (dbm >= -70 ? 'Silný' : dbm >= -85 ? 'OK' : 
 // lim = the valve's {min_temp, max_temp} now (the recorder keeps neither in the history).
 // Returns SVG path data, open-window spans in x units, the °C ticks (room + ordinary target) and the valve's phase
 // spans drawn across the chart (`phases`: fast / run / closed), or null without data.
-export const CHART = { w: 440, top: 10, bottom: 114 };
+export const CHART = { w: 440, top: 10, bottom: 144 };
 const CHART_BACK_MS = 24 * 3600000; // the window's length
 const CHART_MAX_BACK_MS = 7 * 24 * 3600000; // how far back it can be dragged (its start)
 const ts = (r) => { const t = r.lu ?? r.lc; return typeof t === 'number' ? t * 1000 : Date.parse(t); };
@@ -341,7 +341,7 @@ export function chartModel(rows, wins, end, hours = 24, now = end, { lim = {}, p
     if (prev?.k === p.k && prev.b === p.t) prev.b = b; else phases.push({ k: p.k, a: p.t, b });
   });
   // labelled lines every 0.5 / 1 / 2 °C by the span, an unlabelled helper line halfway between two
-  const step = yHi - yLo > 6 ? 2 : yHi - yLo > 2.5 ? 1 : 0.5;
+  const step = yHi - yLo > 6 ? 2 : yHi - yLo > 4 ? 1 : 0.5;
   const ticks = [], minor = [];
   for (let i = Math.ceil((yLo * 2) / step); (i * step) / 2 <= yHi; i++) {
     const n = (i * step) / 2;
@@ -536,7 +536,7 @@ function chartHtml(m) {
   const has = (k) => m.phases?.some((p) => p.k === k);
   const legend = [m.bands.length && '<span><i class="lg win"></i>okno</span>',
     ...Object.entries(LANE_LABEL).map(([k, l]) => has(k) && `<span><i class="lg ln-${k}"></i>${l}</span>`)].filter(Boolean).join('');
-  const H = 140;
+  const H = 170;
   const axis = (ts, cls) => `<div class="${cls}" aria-hidden="true">${ts.map((t) => `<span style="top: ${Math.round((t.y / H) * 1000) / 10}%">${t.text}</span>`).join('')}</div>`;
   const at = (t) => { const d = new Date(t); return `${d.getDate()}. ${d.getMonth() + 1}. ${d.getHours()}:00`; };
   const nav = `<div class="ch-nav"><span>${m.live ? 'Posledních 24 h' : `${at(view.start)} – ${at(view.end)}`}</span>
@@ -554,7 +554,7 @@ function chartHtml(m) {
   <line x1="0" y1="${CHART.bottom}" x2="${W}" y2="${CHART.bottom}" style="stroke: var(--c-border)"></line>
   ${m.target ? `<path d="${m.target}" fill="none" style="stroke: var(--disabled-text-color, #a9afb7)" stroke-width="2" stroke-dasharray="4 4"></path>` : ''}
   <path d="${m.current}" fill="none" stroke="#E8592C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
-  ${m.labels.map((l) => `<text x="${Math.min(l.x, W - 28)}" y="132" ${font}>${l.text}</text>`).join('')}
+  ${m.labels.map((l) => `<text x="${Math.min(l.x, W - 28)}" y="162" ${font}>${l.text}</text>`).join('')}
 </svg></div></div>${legend ? `<div class="legend">${legend}</div>` : ''}`;
 }
 
@@ -1658,7 +1658,7 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .ch-nav { display: flex; align-items: center; gap: 2px; font-size: 12px; color: var(--c-text2); margin-bottom: 2px; } .ch-nav > span { flex: 1; }
 .ch-nav .x { width: 32px; height: 32px; } .ch-nav .x:disabled { opacity: .3; cursor: default; } .ch-nav .sb { height: 28px; margin-left: 4px; }
 .band { fill: color-mix(in srgb, var(--info-color, #0a84ff) var(--hfb-alert-tint, 12%), transparent); }
-.grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; } .grid-l.minor { stroke-dasharray: 1 5; opacity: .6; }
+.grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; } .grid-l.minor { stroke-dasharray: 1 3; }
 .legend { display: flex; gap: 12px; font-size: 11px; color: var(--c-text2); margin-top: 4px; } .legend span { display: inline-flex; align-items: center; gap: 4px; }
 .lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; } .lg.win { background: color-mix(in srgb, var(--info-color, #0a84ff) 30%, transparent); }
 .ln-fast { fill: #FF7A38; background: #FF7A38; } .ln-run { fill: var(--primary-color, #4f6b8c); background: var(--primary-color, #4f6b8c); } .ln-closed { fill: #9AA9B1; background: #9AA9B1; }
