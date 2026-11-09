@@ -333,17 +333,21 @@ test('chartModel: lines, window bands, hour labels', () => {
   assert.equal(chartModel(rows, [{ rows: [{ lu: h(24), s: 'off' }, { lu: h(12), s: 'on' }], since: end - 12 * 3600000 }], end).bands[0].x, 220);
 });
 
-test('chartModel: max (fast start) and the 5 °C hold on a 4 °C valve stay off the scale; no right axis', () => {
+test('chartModel: the recorder drops min / max, so the limits come from the state; phases go to a lane under the time axis', () => {
   const end = Date.parse('2026-11-08T12:00:00');
   const h = (n) => (end - n * 3600000) / 1000;
-  const lim = { min_temp: 4, max_temp: 30 };
-  // 21 °C, fast start 6 h ago holds the valve at 30, a window 4 h ago at 5, back to 21 at 2 h; the room 19
-  const rows = [21, 30, 5, 21].map((t, i) => ({ lu: h([24, 6, 4, 2][i]), a: { ...lim, current_temperature: 19, temperature: t } }));
-  const m = chartModel(rows, [], end);
-  assert.deepEqual(m.ticks.map((t) => t.text), ['18°', '19°', '20°', '21°', '22°']);
-  assert.equal(m.fast, undefined); assert.equal(m.rticks, undefined);
+  // like the real history: no min_temp / max_temp; 21 °C, fast start 6 h ago at 30, a window 4 h ago at 5, back to 21 at 2 h
+  const rows = [21, 30, 5, 21].map((t, i) => ({ lu: h([24, 6, 4, 2][i]), a: { current_temperature: 19, temperature: t } }));
+  const ph = (p) => ({ phases: { [K]: [p], 'climate.other': ['fast'] } });
+  const phaseRows = [{ lu: h(30), a: ph('normal') }, { lu: h(6), a: ph('fast') }, { lu: h(5), a: ph('run') }, { lu: h(4.5), a: ph('overrun') }, { lu: h(3), a: ph('closed') }, { lu: h(2), a: ph('normal') }];
+  const m = chartModel(rows, [], end, 24, end, { lim: { min_temp: 4, max_temp: 30 }, phaseRows, climate: K });
+  assert.deepEqual(m.ticks.map((t) => t.text), ['18°', '19°', '20°', '21°', '22°']); // neither 30 nor 5 stretches it
+  assert.deepEqual(m.phases, [{ k: 'fast', x: 330, w: 18.3 }, { k: 'run', x: 348.3, w: 36.7 }, { k: 'closed', x: 385, w: 18.3 }]); // run + overrun merge
   const html = detailHtml(detail({}), m);
-  assert.doesNotMatch(html, /ch-y2|rychlý start · cíl vpravo/);
+  assert.match(html, /viewBox="0 0 440 156"/); assert.match(html, /<rect class="ln-fast" x="330" y="144"/);
+  assert.match(html, /lg ln-fast"><\/i>rychlý start/); assert.match(html, /lg ln-run"><\/i>doběh/);
+  const plain = chartModel(rows.slice(0, 1), [], end);
+  assert.deepEqual(plain.phases, []); assert.match(detailHtml(detail({}), plain), /viewBox="0 0 440 140"/);
 });
 
 test('signalWord', () => {
