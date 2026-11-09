@@ -10,7 +10,7 @@ A Home Assistant card for one heating circuit, in the Homecraft look: a circuit 
 
 **HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/heating-card`, type **Dashboard** → download **Heating Card** → reload the browser.
 
-**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.7`, type **JavaScript module**). Change `?v=` after copying a new version.
+**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.8`, type **JavaScript module**). Change `?v=` after copying a new version.
 
 ## Configuration
 
@@ -107,6 +107,7 @@ python3 -m http.server 8766 &
 
 ## Changelog
 
+- **0.1.8** — valve dialog chart: only the room temperature and the ordinary target set the °C scale; the 5 °C a window / closed valve is held at (also on a 4 °C valve) stays off it like max, and the right fast-start axis is gone
 - **0.1.7** — valve tiles grouped per part of the circuit under the part's name, part-less ones under *Ostatní* (`sensor.heating_parts_<c>`, HFB heating 1.16 `use_parts`); a circuit without parts looks as before
 - **0.1.6** — valve dialog target controls as design v8: one box with the target in it (arc: Cíl, big target, °C · teď in the middle, − krok + below; ruler: big target in its temperature colour on top, − teď · krok + below; track: Cíl + target with − / + on top), the target row hides; chart: the °C axis comes from the room and the ordinary target only, fast start's target is drawn on a right axis over the valve's range; settings › Ostatní: *Název hlavice na dlaždici* (beside / under the icon, `input_select.heating_tile_layout_<c>`, heating 1.15.0-beta.3)
 - **0.1.5** — valve tiles: three a row from a ~470 px card (tile minimum 136 px instead of 160 px); names and states wrap instead of being cut off, the temperature keeps its °C, the − / + row sits at the tile's bottom
