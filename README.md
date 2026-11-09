@@ -10,7 +10,7 @@ A Home Assistant card for one heating circuit, in the Homecraft look: a circuit 
 
 **HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/heating-card`, type **Dashboard** → download **Heating Card** → reload the browser.
 
-**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.10`, type **JavaScript module**). Change `?v=` after copying a new version.
+**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.11`, type **JavaScript module**). Change `?v=` after copying a new version.
 
 ## Configuration
 
@@ -107,6 +107,7 @@ python3 -m http.server 8766 &
 
 ## Changelog
 
+- **0.1.11** — valve chart: the phases (rychlý start, doběh, zavřeno) are tinted bands across the whole chart instead of a lane under it; dialogs scroll without a visible scrollbar
 - **0.1.10** — valve chart: the recorder keeps no `min_temp` / `max_temp` in the history, so the forced targets (30 °C fast start / run, 5 °C window / closed) were not recognised and stretched the scale to 30; the limits now come from the valve's state. The valve's phases (rychlý start, doběh, zavřeno) show as a lane under the time axis
 - **0.1.9** — dialogs scroll with a thin rounded thumb in a soft text colour instead of the system scrollbar
 - **0.1.8** — valve dialog chart: only the room temperature and the ordinary target set the °C scale; the 5 °C a window / closed valve is held at (also on a 4 °C valve) stays off it like max, and the right fast-start axis is gone
