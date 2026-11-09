@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.11';
+const VERSION = '0.1.12';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -294,7 +294,9 @@ export function chartModel(rows, wins, end, hours = 24, now = end, { lim = {}, p
   }
   const vals = pts.flatMap((p) => [p.cur, p.tgt]).filter((n) => n != null);
   if (!vals.length) return null;
-  const yLo = Math.floor(Math.min(...vals) - 0.5), yHi = Math.ceil(Math.max(...vals) + 0.5);
+  // tight: 0.2 °C of air rounded out to the half degree, at least 1 °C tall (a flat line)
+  let yLo = Math.floor((Math.min(...vals) - 0.2) * 2) / 2, yHi = Math.ceil((Math.max(...vals) + 0.2) * 2) / 2;
+  if (yHi - yLo < 1) yHi = yLo + 1;
   const y = (n) => Math.round((CHART.bottom - ((n - yLo) / (yHi - yLo)) * (CHART.bottom - CHART.top)) * 10) / 10;
   const line = (key, step) => {
     let d = '', prev = null;
@@ -338,11 +340,15 @@ export function chartModel(rows, wins, end, hours = 24, now = end, { lim = {}, p
     const prev = phases.at(-1);
     if (prev?.k === p.k && prev.b === p.t) prev.b = b; else phases.push({ k: p.k, a: p.t, b });
   });
-  const step = yHi - yLo > 6 ? 2 : 1;
-  const ticks = [];
-  for (let n = Math.ceil(yLo / step) * step; n <= yHi; n += step) ticks.push({ y: y(n), text: `${n}°` });
+  // labelled lines every 0.5 / 1 / 2 °C by the span, an unlabelled helper line halfway between two
+  const step = yHi - yLo > 6 ? 2 : yHi - yLo > 2.5 ? 1 : 0.5;
+  const ticks = [], minor = [];
+  for (let i = Math.ceil((yLo * 2) / step); (i * step) / 2 <= yHi; i++) {
+    const n = (i * step) / 2;
+    if (i % 2) minor.push(y(n)); else ticks.push({ y: y(n), text: `${fmt(n, n % 1 ? 1 : 0)}°` });
+  }
   return {
-    start, end, w: W, current: line('cur', false), target: line('tgt', true), bands: merged.map(band), labels, ticks,
+    start, end, w: W, current: line('cur', false), target: line('tgt', true), bands: merged.map(band), labels, ticks, minor,
     phases: phases.map((p) => ({ k: p.k, ...band([p.a, p.b]) })),
   };
 }
@@ -542,6 +548,7 @@ function chartHtml(m) {
   return `${nav}<div class="ch-box">${axis(m.ticks, 'ch-y')}
   <div class="ch-view"><svg viewBox="0 0 ${W} ${H}" style="width: ${Math.round((W / CHART.w) * 10000) / 100}%; transform: translateX(-${shift}%)" data-shift="${shift}" role="img" aria-label="Teplota a cíl, táhni do stran pro posun v čase" class="ch-svg">
   ${m.ticks.map((t) => `<line x1="0" y1="${t.y}" x2="${W}" y2="${t.y}" class="grid-l"></line>`).join('')}
+  ${(m.minor ?? []).map((n) => `<line x1="0" y1="${n}" x2="${W}" y2="${n}" class="grid-l minor"></line>`).join('')}
   ${(m.phases ?? []).map((p) => `<rect class="ph-band ln-${p.k}" x="${p.x}" y="${CHART.top}" width="${p.w}" height="${CHART.bottom - CHART.top}"></rect>`).join('')}
   ${m.bands.map((b) => `<rect class="band" x="${b.x}" y="${CHART.top}" width="${b.w}" height="${CHART.bottom - CHART.top}" rx="4"></rect>`).join('')}
   <line x1="0" y1="${CHART.bottom}" x2="${W}" y2="${CHART.bottom}" style="stroke: var(--c-border)"></line>
@@ -1651,7 +1658,7 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .ch-nav { display: flex; align-items: center; gap: 2px; font-size: 12px; color: var(--c-text2); margin-bottom: 2px; } .ch-nav > span { flex: 1; }
 .ch-nav .x { width: 32px; height: 32px; } .ch-nav .x:disabled { opacity: .3; cursor: default; } .ch-nav .sb { height: 28px; margin-left: 4px; }
 .band { fill: color-mix(in srgb, var(--info-color, #0a84ff) var(--hfb-alert-tint, 12%), transparent); }
-.grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; }
+.grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; } .grid-l.minor { stroke-dasharray: 1 5; opacity: .6; }
 .legend { display: flex; gap: 12px; font-size: 11px; color: var(--c-text2); margin-top: 4px; } .legend span { display: inline-flex; align-items: center; gap: 4px; }
 .lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; } .lg.win { background: color-mix(in srgb, var(--info-color, #0a84ff) 30%, transparent); }
 .ln-fast { fill: #FF7A38; background: #FF7A38; } .ln-run { fill: var(--primary-color, #4f6b8c); background: var(--primary-color, #4f6b8c); } .ln-closed { fill: #9AA9B1; background: #9AA9B1; }
