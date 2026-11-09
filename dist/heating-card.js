@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.7';
+const VERSION = '0.1.8';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -267,51 +267,41 @@ export function valveDetail(hass, cfg, climate, now = Date.now(), ids = deviceEn
 export const signalWord = (dbm) => (dbm >= -70 ? 'Silný' : dbm >= -85 ? 'OK' : 'Slabý');
 
 // Chart geometry over `hours` ending at `end` (24 h = CHART.w wide). rows = history/history_during_period rows of the climate ({a: attributes, lu: epoch s}),
-// winRows = rows of every window sensor ({s: state, lu}), phaseRows = rows of sensor.heating_valves_<circuit> ({a: {phases}, lu}).
-// Returns SVG path data, open-window spans in x units, the left °C ticks (room + ordinary target) and, on a right axis
-// over the valve's whole range, the target while fast start holds it (`fast`, `rticks`), or null without data.
+// winRows = rows of every window sensor ({s: state, lu}).
+// Returns SVG path data, open-window spans in x units and the °C ticks (room + ordinary target), or null without data.
 export const CHART = { w: 440, top: 10, bottom: 114 };
 const CHART_BACK_MS = 24 * 3600000; // the window's length
 const CHART_MAX_BACK_MS = 7 * 24 * 3600000; // how far back it can be dragged (its start)
 const ts = (r) => { const t = r.lu ?? r.lc; return typeof t === 'number' ? t * 1000 : Date.parse(t); };
 // wins = [{rows, since}]: a window's history rows ({s, lu}) and, for an open window, when it opened (`since`).
-export function chartModel(rows, wins, end, hours = 24, phaseRows = [], climate = '', now = end) {
+export function chartModel(rows, wins, end, hours = 24, now = end) {
   const start = end - hours * 3600000;
   const W = (CHART.w * hours) / 24; // 24 h = CHART.w; a longer span is wider (the dialog shows 24 h of it and pans)
   const last = Math.min(end, now); // nothing is drawn past now
   const x = (t) => Math.round(((Math.min(end, Math.max(start, t)) - start) / (end - start)) * W * 10) / 10;
-  // the valve's phase spans: a phase holds until the next row of the sensor
-  const ph = (phaseRows ?? []).map((r) => ({ t: ts(r), p: r.a?.phases?.[climate]?.[0] ?? 'normal' })).filter((p) => Number.isFinite(p.t) && p.t <= last).sort((a, b) => a.t - b.t);
-  // a target at the valve's max / min (each row's own range) is Node-RED forcing it (fast start, run at max; window,
-  // off at min): left out of the °C line and scale; while the valve is in fast start it goes to the right axis
-  let cur = null, tgt = null, raw = null, lo = -Infinity, hi = Infinity, k = 0, phase = 'normal';
-  const pt = (t) => { const forced = raw != null && (raw >= hi || raw <= lo); tgt = raw == null || forced ? null : raw; return { t, cur, tgt, fast: forced && phase === 'fast' ? raw : null }; };
+  // a target at the valve's max or at its min / 5 °C (each row's own range) is Node-RED forcing it (fast start, run,
+  // overrun at max; window, closed at 5 °C even on a valve whose min is 4): left out of the line and the scale
+  let cur = null, tgt = null, raw = null, lo = -Infinity, hi = Infinity;
   const pts = [];
   for (const { r, t } of (rows ?? []).map((r) => ({ r, t: ts(r) })).filter((p) => Number.isFinite(p.t) && p.t <= last).sort((a, b) => a.t - b.t)) {
-    // both sorted, one pass: a phase change between two rows adds a point, so fast start ends where the sensor says
-    while (k < ph.length && ph[k].t <= t) { phase = ph[k].p; if (pts.length && ph[k].t > pts.at(-1).t) pts.push(pt(ph[k].t)); k++; }
     lo = num(r.a?.min_temp) ?? lo; hi = num(r.a?.max_temp) ?? hi;
     cur = num(r.a?.current_temperature) ?? cur;
     raw = num(r.a?.temperature) ?? raw;
-    pts.push(pt(t));
+    tgt = raw == null || raw >= hi || raw <= Math.max(lo, 5) ? null : raw;
+    pts.push({ t, cur, tgt });
   }
-  while (k < ph.length && ph[k].t <= last) { phase = ph[k].p; if (pts.length && ph[k].t > pts.at(-1).t) pts.push(pt(ph[k].t)); k++; }
   const vals = pts.flatMap((p) => [p.cur, p.tgt]).filter((n) => n != null);
   if (!vals.length) return null;
   const yLo = Math.floor(Math.min(...vals) - 0.5), yHi = Math.ceil(Math.max(...vals) + 0.5);
   const y = (n) => Math.round((CHART.bottom - ((n - yLo) / (yHi - yLo)) * (CHART.bottom - CHART.top)) * 10) / 10;
-  // the right axis: the valve's whole range (fast start holds it near the top)
-  let rLo = Number.isFinite(lo) ? lo : 5, rHi = Number.isFinite(hi) ? hi : 30;
-  if (!(rHi > rLo)) [rLo, rHi] = [5, 30]; // a collapsed range would divide by 0
-  const yR = (n) => Math.round((CHART.bottom - ((Math.min(rHi, Math.max(rLo, n)) - rLo) / (rHi - rLo)) * (CHART.bottom - CHART.top)) * 10) / 10;
-  const line = (key, step, yf = y) => {
+  const line = (key, step) => {
     let d = '', prev = null;
     for (const p of pts) {
       if (p[key] == null) { if (prev && step) d += ` H${x(p.t)}`; prev = null; continue; } // a gap: the forced span
-      d += !prev ? `${d ? ' ' : ''}M${x(p.t)} ${yf(p[key])}` : step ? ` H${x(p.t)} V${yf(p[key])}` : ` L${x(p.t)} ${yf(p[key])}`;
+      d += !prev ? `${d ? ' ' : ''}M${x(p.t)} ${y(p[key])}` : step ? ` H${x(p.t)} V${y(p[key])}` : ` L${x(p.t)} ${y(p[key])}`;
       prev = p;
     }
-    return prev ? d + (step ? ` H${x(last)}` : ` L${x(last)} ${yf(prev[key])}`) : d; // the last value holds until now
+    return prev ? d + (step ? ` H${x(last)}` : ` L${x(last)} ${y(prev[key])}`) : d; // the last value holds until now
   };
   // open spans: merge the windows' "on" intervals (a state holds until the next row)
   const spans = [];
@@ -341,7 +331,6 @@ export function chartModel(rows, wins, end, hours = 24, phaseRows = [], climate 
   for (let n = Math.ceil(yLo / step) * step; n <= yHi; n += step) ticks.push({ y: y(n), text: `${n}°` });
   return {
     start, end, w: W, current: line('cur', false), target: line('tgt', true), bands: merged.map(band), labels, ticks,
-    fast: line('fast', true, yR), rticks: pts.some((p) => p.fast != null) ? [rLo, Math.round((rLo + rHi) / 2), rHi].map((n) => ({ y: yR(n), text: `${fmt(n)}°` })) : [],
   };
 }
 
@@ -524,7 +513,7 @@ const BATTERY_PLAIN = 'M16.67,4H15V2H9V4H7.33A1.33,1.33 0 0,0 6,5.33V20.67C6,21.
 function chartHtml(m) {
   const font = 'font-size="11" style="fill: var(--c-text2)"';
   const W = m.w ?? CHART.w, view = m.view ?? { start: m.start, end: m.end };
-  const legend = [m.bands.length && '<span><i class="lg win"></i>okno</span>', m.fast && '<span><i class="lg fast"></i>rychlý start · cíl vpravo</span>'].filter(Boolean).join('');
+  const legend = [m.bands.length && '<span><i class="lg win"></i>okno</span>'].filter(Boolean).join('');
   const axis = (ts, cls) => `<div class="${cls}" aria-hidden="true">${ts.map((t) => `<span style="top: ${Math.round((t.y / 140) * 1000) / 10}%">${t.text}</span>`).join('')}</div>`;
   const at = (t) => { const d = new Date(t); return `${d.getDate()}. ${d.getMonth() + 1}. ${d.getHours()}:00`; };
   const nav = `<div class="ch-nav"><span>${m.live ? 'Posledních 24 h' : `${at(view.start)} – ${at(view.end)}`}</span>
@@ -533,16 +522,15 @@ function chartHtml(m) {
     ${m.live ? '' : '<button class="sb soft" data-act="chartNow" data-k="chart:now">Teď</button>'}</div>`;
   // the svg is W / CHART.w times the view's width, shifted so the view shows view.start..view.end
   const shift = Math.round(((view.start - m.start) / (m.end - m.start)) * 10000) / 100;
-  return `${nav}<div class="ch-box${m.rticks?.length ? ' r' : ''}">${axis(m.ticks, 'ch-y')}
+  return `${nav}<div class="ch-box">${axis(m.ticks, 'ch-y')}
   <div class="ch-view"><svg viewBox="0 0 ${W} 140" style="width: ${Math.round((W / CHART.w) * 10000) / 100}%; transform: translateX(-${shift}%)" data-shift="${shift}" role="img" aria-label="Teplota a cíl, táhni do stran pro posun v čase" class="ch-svg">
   ${m.ticks.map((t) => `<line x1="0" y1="${t.y}" x2="${W}" y2="${t.y}" class="grid-l"></line>`).join('')}
   ${m.bands.map((b) => `<rect class="band" x="${b.x}" y="${CHART.top}" width="${b.w}" height="${CHART.bottom - CHART.top}" rx="4"></rect>`).join('')}
   <line x1="0" y1="${CHART.bottom}" x2="${W}" y2="${CHART.bottom}" style="stroke: var(--c-border)"></line>
-  ${m.fast ? `<path d="${m.fast}" fill="none" class="ph-fast-l" stroke-width="2" stroke-dasharray="2 3"></path>` : ''}
   ${m.target ? `<path d="${m.target}" fill="none" style="stroke: var(--disabled-text-color, #a9afb7)" stroke-width="2" stroke-dasharray="4 4"></path>` : ''}
   <path d="${m.current}" fill="none" stroke="#E8592C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
   ${m.labels.map((l) => `<text x="${Math.min(l.x, W - 28)}" y="132" ${font}>${l.text}</text>`).join('')}
-</svg></div>${m.rticks?.length ? axis(m.rticks, 'ch-y ch-y2') : ''}</div>${legend ? `<div class="legend">${legend}</div>` : ''}`;
+</svg></div></div>${legend ? `<div class="legend">${legend}</div>` : ''}`;
 }
 
 // The valve dialog in sections that are patched separately (so the buttons keep their nodes):
@@ -1638,15 +1626,15 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .tv { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; } .tv small { font-size: 13px; font-weight: 500; color: var(--c-text2); }
 .pm.raised { background: var(--c-raised); box-shadow: var(--c-raised-sh); } .pm.raised:disabled { background: transparent; box-shadow: none; }
 .vd-chart { margin: 0; } .vd-chart svg { display: block; }
-.ch-box { display: grid; grid-template-columns: 30px minmax(0, 1fr); } .ch-box.r { grid-template-columns: 30px minmax(0, 1fr) 30px; } .ch-view { overflow: hidden; }
-.ch-y { position: relative; font-size: 11px; color: var(--c-text2); } .ch-y span { position: absolute; right: 6px; transform: translateY(-50%); } .ch-y2 span { right: auto; left: 6px; color: #D9822B; }
+.ch-box { display: grid; grid-template-columns: 30px minmax(0, 1fr); } .ch-view { overflow: hidden; }
+.ch-y { position: relative; font-size: 11px; color: var(--c-text2); } .ch-y span { position: absolute; right: 6px; transform: translateY(-50%); }
 .ch-svg { touch-action: pan-y; cursor: grab; user-select: none; -webkit-user-select: none; } .ch-svg:active { cursor: grabbing; }
 .ch-nav { display: flex; align-items: center; gap: 2px; font-size: 12px; color: var(--c-text2); margin-bottom: 2px; } .ch-nav > span { flex: 1; }
 .ch-nav .x { width: 32px; height: 32px; } .ch-nav .x:disabled { opacity: .3; cursor: default; } .ch-nav .sb { height: 28px; margin-left: 4px; }
 .band { fill: color-mix(in srgb, var(--info-color, #0a84ff) var(--hfb-alert-tint, 12%), transparent); }
-.grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; } .ph-fast-l { stroke: #F0A14B; }
+.grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; }
 .legend { display: flex; gap: 12px; font-size: 11px; color: var(--c-text2); margin-top: 4px; } .legend span { display: inline-flex; align-items: center; gap: 4px; }
-.lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; } .lg.win { background: color-mix(in srgb, var(--info-color, #0a84ff) 30%, transparent); } .lg.fast { background: #F0A14B; }
+.lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; } .lg.win { background: color-mix(in srgb, var(--info-color, #0a84ff) 30%, transparent); }
 .chart-msg { font-size: 12px; color: var(--c-text2); padding: 40px 0; text-align: center; }
 .vd-h { font-size: 13px; font-weight: 600; margin-bottom: -6px; }
 .vd-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -2170,12 +2158,11 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     let raw = null;
     try {
       const wl = windowList(this._hass, this._cfg, climate);
-      const valvesId = eid(this._cfg, 'sensor', 'heating_valves');
       const res = await this._hass.callWS({
         type: 'history/history_during_period', start_time: new Date(from).toISOString(), end_time: new Date(to).toISOString(),
-        entity_ids: [climate, valvesId, ...wl.map((w) => w.entity_id)], include_start_time_state: true, significant_changes_only: false, minimal_response: false, no_attributes: false,
+        entity_ids: [climate, ...wl.map((w) => w.entity_id)], include_start_time_state: true, significant_changes_only: false, minimal_response: false, no_attributes: false,
       });
-      raw = { climate, res, wl, valvesId, from, to };
+      raw = { climate, res, wl, from, to };
     } catch (e) { /* keep what was loaded */ }
     if (seq !== this._seq || climate !== this._vd) return;
     if (raw || this._chartRaw?.climate !== climate) this._chartRaw = raw;
@@ -2202,9 +2189,9 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
       return; // still loading: the old chart (or the loading note) stays
     }
     const mStart = end - 2 * CHART_BACK_MS, mEnd = Math.min(now, end + CHART_BACK_MS);
-    const { res, wl, valvesId } = raw;
+    const { res, wl } = raw;
     let chart = chartModel(res?.[raw.climate], wl.map((w) => ({ rows: res?.[w.entity_id], since: w.open === true || w.state === 'on' ? sinceMs(w) : null })),
-      mEnd, (mEnd - mStart) / 3600000, res?.[valvesId], raw.climate, now) ?? 'none';
+      mEnd, (mEnd - mStart) / 3600000, now) ?? 'none';
     if (chart !== 'none') Object.assign(chart, { live, view: { start: end - CHART_BACK_MS, end }, oldest: !live && end - CHART_BACK_MS <= now - CHART_MAX_BACK_MS });
     this._chart = chart;
     this._refreshDialog(true);

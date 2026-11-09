@@ -333,22 +333,17 @@ test('chartModel: lines, window bands, hour labels', () => {
   assert.equal(chartModel(rows, [{ rows: [{ lu: h(24), s: 'off' }, { lu: h(12), s: 'on' }], since: end - 12 * 3600000 }], end).bands[0].x, 220);
 });
 
-test('chartModel: fast start target on the right axis, the °C axis from the room and the ordinary target', () => {
+test('chartModel: max (fast start) and the 5 °C hold on a 4 °C valve stay off the scale; no right axis', () => {
   const end = Date.parse('2026-11-08T12:00:00');
   const h = (n) => (end - n * 3600000) / 1000;
   const lim = { min_temp: 4, max_temp: 30 };
-  // 21 °C, fast start 6 h ago holds the valve at 30, back to 21 at 2 h; the room 19
-  const rows = [{ lu: h(24), a: { ...lim, current_temperature: 19, temperature: 21 } }, { lu: h(6), a: { ...lim, current_temperature: 19, temperature: 30 } }, { lu: h(2), a: { ...lim, current_temperature: 19, temperature: 21 } }];
-  const ph = (p) => ({ phases: { [K]: [p], 'climate.other': ['fast'] } });
-  const m = chartModel(rows, [], end, 24, [{ lu: h(30), a: ph('normal') }, { lu: h(6), a: ph('fast') }, { lu: h(3), a: ph('overrun') }, { lu: h(2), a: ph('normal') }], K);
-  assert.deepEqual(m.ticks.map((t) => t.text), ['18°', '19°', '20°', '21°', '22°']); // 30 never stretches the °C axis
-  assert.deepEqual(m.rticks.map((t) => t.text), ['4°', '17°', '30°']);
-  assert.match(m.fast, /^M330 10 H385$/); // at the top of the right axis from 6 h to 3 h ago (the phase ends at 3 h)
-  const plain = chartModel(rows.slice(0, 1), [], end);
-  assert.equal(plain.fast, ''); assert.deepEqual(plain.rticks, []);
+  // 21 °C, fast start 6 h ago holds the valve at 30, a window 4 h ago at 5, back to 21 at 2 h; the room 19
+  const rows = [21, 30, 5, 21].map((t, i) => ({ lu: h([24, 6, 4, 2][i]), a: { ...lim, current_temperature: 19, temperature: t } }));
+  const m = chartModel(rows, [], end);
+  assert.deepEqual(m.ticks.map((t) => t.text), ['18°', '19°', '20°', '21°', '22°']);
+  assert.equal(m.fast, undefined); assert.equal(m.rticks, undefined);
   const html = detailHtml(detail({}), m);
-  assert.match(html, /ch-box r/); assert.match(html, /ch-y ch-y2/); assert.match(html, /rychlý start · cíl vpravo/);
-  assert.doesNotMatch(html, /lg run|ph-run|>doběh</);
+  assert.doesNotMatch(html, /ch-y2|rychlý start · cíl vpravo/);
 });
 
 test('signalWord', () => {
@@ -753,7 +748,7 @@ test('chartModel: forced targets (max / min) leave the line and the y scale; 72 
   assert.deepEqual(m.ticks.map((t) => t.text), ['18°', '19°', '20°', '21°', '22°']); // no 5° … 30°
   assert.equal((m.target.match(/M/g) ?? []).length, 3); // three pieces around the two forced spans
   assert.match(m.target, /^M0 \S+ H220 M256\.7 /); // stops where 30 starts, resumes at 21
-  const wide = chartModel(rows, [], end + 24 * 3600000, 72, [], '', end);
+  const wide = chartModel(rows, [], end + 24 * 3600000, 72, end);
   assert.equal(wide.w, 1320);
   assert.match(wide.current, / L880 [\d.]+$/); // the last value holds until now (2/3 of 72 h), not to the end
 });
