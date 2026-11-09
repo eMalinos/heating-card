@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.14';
+const VERSION = '0.1.15';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -535,8 +535,10 @@ function chartHtml(m) {
   const font = 'font-size="11" style="fill: var(--c-text2)"';
   const W = m.w ?? CHART.w, view = m.view ?? { start: m.start, end: m.end };
   const has = (k) => m.phases?.some((p) => p.k === k);
-  const legend = [m.bands.length && '<span><i class="lg win"></i>okno</span>',
-    ...Object.entries(LANE_LABEL).map(([k, l]) => has(k) && `<span><i class="lg ln-${k}"></i>${l}</span>`)].filter(Boolean).join('');
+  // a legend item shows only its bands (with the lines); again = everything (the figure's data-only, see chartOnly)
+  const item = (k, cls, l) => `<button type="button" data-act="chartOnly" data-val="${k}" data-k="chart:only:${k}"><i class="lg ${cls}"></i>${l}</button>`;
+  const legend = [m.bands.length && item('win', 'win', 'okno'),
+    ...Object.entries(LANE_LABEL).map(([k, l]) => has(k) && item(k, `ln-${k}`, l))].filter(Boolean).join('');
   const H = 170;
   const axis = (ts, cls) => `<div class="${cls}" aria-hidden="true">${ts.map((t) => `<span style="top: ${Math.round((t.y / H) * 1000) / 10}%">${t.text}</span>`).join('')}</div>`;
   const at = (t) => { const d = new Date(t); return `${d.getDate()}. ${d.getMonth() + 1}. ${d.getHours()}:00`; };
@@ -1672,9 +1674,15 @@ dialog.vd[open] { display: flex; flex-direction: column; gap: 14px; padding: 18p
 .ch-nav .x { width: 32px; height: 32px; } .ch-nav .x:disabled { opacity: .3; cursor: default; } .ch-nav .sb { height: 28px; margin-left: 4px; }
 .band { fill: color-mix(in srgb, var(--info-color, #0a84ff) var(--hfb-alert-tint, 12%), transparent); }
 .grid-l { stroke: var(--c-border); stroke-dasharray: 2 4; } .grid-l.minor { stroke-dasharray: 1 3; }
-.legend { display: flex; gap: 12px; font-size: 11px; color: var(--c-text2); margin-top: 4px; } .legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px; font-size: 11px; color: var(--c-text2); margin-top: 4px; }
+.legend button { display: inline-flex; align-items: center; gap: 4px; font: inherit; color: inherit; background: none; border: 0; border-radius: 6px; padding: 4px 6px; cursor: pointer; }
+.legend button:hover { background: var(--c-tile-bg); }
+.vd-chart[data-only] .band, .vd-chart[data-only] .ph-band { display: none; }
+.vd-chart[data-only] .legend button { opacity: .4; }
+.vd-chart[data-only="win"] .band, .vd-chart[data-only="fast"] .ph-band.ln-fast, .vd-chart[data-only="run"] .ph-band.ln-run, .vd-chart[data-only="closed"] .ph-band.ln-closed { display: inline; }
+.vd-chart[data-only="win"] .legend [data-val="win"], .vd-chart[data-only="fast"] .legend [data-val="fast"], .vd-chart[data-only="run"] .legend [data-val="run"], .vd-chart[data-only="closed"] .legend [data-val="closed"] { opacity: 1; background: var(--c-tile-bg); }
 .lg { width: 10px; height: 10px; border-radius: 3px; display: inline-block; } .lg.win { background: color-mix(in srgb, var(--info-color, #0a84ff) 30%, transparent); }
-.ln-fast { fill: #FF7A38; background: #FF7A38; } .ln-run { fill: var(--primary-color, #4f6b8c); background: var(--primary-color, #4f6b8c); } .ln-closed { fill: #9AA9B1; background: #9AA9B1; }
+.ln-fast { fill: #FF7A38; background: #FF7A38; } .ln-run { fill: #9B6BDF; background: #9B6BDF; } .ln-closed { fill: #9AA9B1; background: #9AA9B1; }
 .ph-band { opacity: .2; } .lg[class*="ln-"] { opacity: .45; } /* a phase across the whole chart, under the window bands and the lines */
 .chart-msg { font-size: 12px; color: var(--c-text2); padding: 40px 0; text-align: center; }
 .vd-h { font-size: 13px; font-weight: 600; margin-bottom: -6px; }
@@ -2304,6 +2312,10 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     } else if (act === 'tab') { this._gdCtx.tab = b.dataset.val; this._refreshGeneric(true); }
     else if (act === 'chartNav') this._panChart(6 * Number(b.dataset.d));
     else if (act === 'chartNow') { this._chartEnd = null; this._showChartWindow(); }
+    else if (act === 'chartOnly') { // on the figure, so it outlives the chart's re-renders; a new dialog starts with all
+      const f = b.closest('.vd-chart');
+      if (f.dataset.only === b.dataset.val) delete f.dataset.only; else f.dataset.only = b.dataset.val;
+    }
     else if (act === 'control' || act === 'tiles') {
       const id = eid(c, 'input_select', act === 'control' ? 'heating_target_control' : 'heating_tile_layout');
       if (st(this._hass, id) !== b.dataset.val) this._call('input_select', 'select_option', { entity_id: id, option: b.dataset.val });

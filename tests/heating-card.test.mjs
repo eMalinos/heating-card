@@ -353,6 +353,7 @@ test('chartModel: the recorder drops min / max, so the limits come from the stat
   const html = detailHtml(detail({}), m);
   assert.match(html, /viewBox="0 0 440 170"/); assert.match(html, /<rect class="ph-band ln-fast" x="330" y="10" width="18.3" height="134">/);
   assert.match(html, /lg ln-fast"><\/i>rychlý start/); assert.match(html, /lg ln-run"><\/i>doběh/);
+  assert.match(html, /<button type="button" data-act="chartOnly" data-val="run" data-k="chart:only:run"><i class="lg ln-run"><\/i>doběh<\/button>/); // a legend item filters the bands
   const plain = chartModel(rows.slice(0, 1), [], end);
   assert.deepEqual(plain.phases, []); assert.doesNotMatch(detailHtml(detail({}), plain), /ph-band/);
 });
