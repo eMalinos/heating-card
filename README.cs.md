@@ -10,7 +10,7 @@ Karta pro Home Assistant, která zobrazuje jeden topný okruh v stylu Homecraft:
 
 **HACS (vlastní repozitář):** HACS → ⋮ → Vlastní repozitáře → `https://github.com/eMalinos/heating-card`, typ **Dashboard** → stáhnout **Heating Card** → obnovit prohlížeč.
 
-**Ručně:** zkopíruj [`dist/heating-card.js`](dist/heating-card.js) do `config/www/` a přidej ho jako zdroj dashboardu (Nastavení → Dashboardy → ⋮ → Zdroje → URL `/local/heating-card.js?v=0.1.6`, typ **JavaScript module**). Po zkopírování nové verze změň `?v=`.
+**Ručně:** zkopíruj [`dist/heating-card.js`](dist/heating-card.js) do `config/www/` a přidej ho jako zdroj dashboardu (Nastavení → Dashboardy → ⋮ → Zdroje → URL `/local/heating-card.js?v=0.1.7`, typ **JavaScript module**). Po zkopírování nové verze změň `?v=`.
 
 ## Konfigurace
 
@@ -35,6 +35,10 @@ Gesta: `tap`, `double_tap`, `hold`, `icon_tap`, `icon_double_tap`, `icon_hold` n
 Prostřední segment režimu se jmenuje *Čas* (ikona hodin) místo *Počasí*, když je pravidlo (`input_select.heating_auto_rule_<okruh>`) `time`.
 
 Akce: segmenty režimu volají `input_select.select_option`, křížek u stavové zprávy ji smaže, **Srovnat** stiskne `input_button.heating_sync_<okruh>`, − / + mění cílovou teplotu hlavice o krok z `input_number.heating_target_step_<okruh>` (Nastavení › Ostatní › Krok cíle hlavice; bez něj 0,5 °C; ne u hlavice s otevřeným oknem ani při vypnutém okruhu). Dialog statistik přijde později; `schedule_gesture` otevře `heating-schedule-card` v jednoduchém dialogu.
+
+### Části okruhu
+
+Když je okruh rozdělený na části (HFB heating 1.16 s `use_parts`, např. jeden kotel pro dva byty), dlaždice hlavic jsou seskupené podle části pod jejím názvem ze `sensor.heating_parts_<okruh>`; hlavice bez části jsou na konci pod *Ostatní*. Bez toho senzoru vypadá box jako dřív. Žádné nastavení karty není potřeba.
 
 ## Dialog hlavice
 

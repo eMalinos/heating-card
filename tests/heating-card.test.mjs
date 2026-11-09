@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { clockText, settingsView, settingsHtml, numField, stepNum, outdoorSources, programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural, signalWord, controlValue, controlHtml, targetControl, snapTarget, RULER_PX, tempColor, stepOf, fmtTarget, currentTarget } from '../dist/heating-card.js';
+import { clockText, settingsView, settingsHtml, numField, stepNum, outdoorSources, programView, programParts, programHtml, whenText, programId, normalizeConfig, valveView, circuitView, valvesSummary, gestureMap, zoneHandlers, nextTarget, cardHtml, valveDetail, chartModel, detailHtml, batteryText, fmt, plural, signalWord, controlValue, controlHtml, targetControl, snapTarget, RULER_PX, tempColor, stepOf, fmtTarget, currentTarget, valveGroups } from '../dist/heating-card.js';
 
 const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/states.json', import.meta.url), 'utf8'));
 const C = 'circuit_demo';
@@ -756,4 +756,41 @@ test('chartModel: forced targets (max / min) leave the line and the y scale; 72 
   const wide = chartModel(rows, [], end + 24 * 3600000, 72, [], '', end);
   assert.equal(wide.w, 1320);
   assert.match(wide.current, / L880 [\d.]+$/); // the last value holds until now (2/3 of 72 h), not to the end
+});
+
+// HFB heating use_parts: sensor.heating_parts_<c> with attribute parts = {id: name}.
+const parts = (p) => ({ [`sensor.heating_parts_${C}`]: { state: String(Object.keys(p).length), attributes: { parts: p } } });
+const PV = ['climate.flat1_bathroom_valve', 'climate.flat2_kitchen_valve', 'climate.hall_valve', 'climate.flat1_bedroom_valve'];
+const PCFG = normalizeConfig({ circuit: C, valves: PV });
+
+test('valveGroups: no sensor, empty or bad parts -> one unnamed group', () => {
+  for (const w of [world(), world(parts({})), world({ [`sensor.heating_parts_${C}`]: { state: '1', attributes: { parts: 'x' } } })]) {
+    assert.deepEqual(valveGroups(w, PCFG), [{ name: '', valves: PV }]);
+  }
+});
+
+test('valveGroups: one group per part in key order, part-less valves last under Ostatní', () => {
+  assert.deepEqual(valveGroups(world(parts({ flat1: 'Babi', flat2: 'Máma' })), PCFG), [
+    { name: 'Babi', valves: ['climate.flat1_bathroom_valve', 'climate.flat1_bedroom_valve'] },
+    { name: 'Máma', valves: ['climate.flat2_kitchen_valve'] },
+    { name: 'Ostatní', valves: ['climate.hall_valve'] },
+  ]);
+});
+
+test('valveGroups: the longest matching id wins; empty groups are skipped', () => {
+  const cfg = normalizeConfig({ circuit: C, valves: ['climate.flat_a_valve', 'climate.flat_b_valve'] });
+  assert.deepEqual(valveGroups(world(parts({ flat: 'Byt', flat_a: 'A', none: 'Nic' })), cfg), [
+    { name: 'Byt', valves: ['climate.flat_b_valve'] },
+    { name: 'A', valves: ['climate.flat_a_valve'] },
+  ]);
+});
+
+test('cardHtml: part headings only for a circuit with parts', () => {
+  const html = cardHtml(world(parts({ flat1: 'Babi', flat2: 'Máma' })), PCFG);
+  assert.deepEqual([...html.matchAll(/<div class="gh">([^<]*)<\/div>/g)].map((m) => m[1]), ['Babi', 'Máma', 'Ostatní']);
+  assert.equal((html.match(/class="grid"/g) ?? []).length, 3);
+  assert.equal((html.match(/class="tile/g) ?? []).length, 4);
+  const plain = cardHtml(world(), PCFG);
+  assert.ok(!plain.includes('class="gh"'));
+  assert.equal((plain.match(/class="grid"/g) ?? []).length, 1);
 });

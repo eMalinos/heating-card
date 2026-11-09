@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.6';
+const VERSION = '0.1.7';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -642,12 +642,32 @@ export function cardParts(hass, cfg, pending = {}) {
   return { box1: box1Html(circuitView(hass, cfg)), summary: valvesSummary(views), tiles: views.map((v) => tileHtml(v, cfg)) };
 }
 
+// Box 2 tiles per part of the circuit (HFB heating use_parts: sensor.heating_parts_<c>, attribute parts = {id: name}).
+// A valve belongs to the part whose `<id>_` starts its object ID (the longest id wins); the rest go last under Ostatní.
+// No parts -> one unnamed group with every valve.
+export function valveGroups(hass, cfg) {
+  const parts = at(hass, eid(cfg, 'sensor', 'heating_parts'), 'parts');
+  const ids = parts && typeof parts === 'object' && !Array.isArray(parts) ? Object.keys(parts) : [];
+  if (!ids.length) return [{ name: '', valves: cfg.valves }];
+  const partOf = (v) => {
+    const obj = v.slice(v.indexOf('.') + 1);
+    return ids.filter((id) => obj.startsWith(`${id}_`)).sort((a, b) => b.length - a.length)[0];
+  };
+  const of = Object.fromEntries(cfg.valves.map((v) => [v, partOf(v)]));
+  return [...ids.map((id) => ({ name: String(parts[id] ?? id), valves: cfg.valves.filter((v) => of[v] === id) })),
+    { name: 'Ostatní', valves: cfg.valves.filter((v) => of[v] === undefined) }].filter((g) => g.valves.length);
+}
+
+// One grid per group, a heading above a named one; `slot(valve)` = the markup inside the grid for that valve.
+const groupsHtml = (groups, slot) => groups.map((g) => `${g.name ? `<div class="gh">${esc(g.name)}</div>` : ''}<div class="grid">${g.valves.map(slot).join('')}</div>`).join('');
+
 export function cardHtml(hass, cfg, pending) {
   const p = cardParts(hass, cfg, pending);
+  const tile = Object.fromEntries(cfg.valves.map((v, i) => [v, p.tiles[i]]));
   return `<div class="card">${p.box1}</div>
 <div class="card">
   <div class="head2"><div class="h">Hlavice</div><div class="sub">${esc(p.summary)}</div></div>
-  <div class="grid">${p.tiles.join('')}</div>
+  ${groupsHtml(valveGroups(hass, cfg), (v) => tile[v])}
 </div>`;
 }
 
@@ -658,6 +678,7 @@ const CIRCUIT_ENTITIES = [
   ['select', 'heating_program'], ['sensor', 'heating_program'], ['sensor', 'heating_applying'], ['sensor', 'heating_off_schedule'],
   ['sensor', 'heating_valves'], ['sensor', 'heating_low_batteries'], ['sensor', 'heating_outdoor_temperature'],
   ['binary_sensor', 'heating_active'], ['binary_sensor', 'heating_state'], ['input_select', 'heating_tile_layout'],
+  ['sensor', 'heating_parts'],
 ];
 export const watchedIds = (cfg) => [...CIRCUIT_ENTITIES.map(([d, n]) => eid(cfg, d, n)), ...cfg.valves];
 
@@ -1535,6 +1556,7 @@ button.dot { border: 0; padding: 0; cursor: pointer; font: inherit; }
 .head2 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; } .head2 .h { font-size: 15px; font-weight: 600; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 136px), 1fr)); gap: 8px; }
 .tile { padding: 10px 8px 8px 10px; display: flex; flex-direction: column; gap: 8px; background: var(--c-tile-bg); border: var(--c-tile-border); box-shadow: var(--c-tile-shadow); border-radius: var(--c-tile-radius); }
+.gh { font-size: 12px; font-weight: 600; color: var(--c-text2); margin-bottom: -4px; } .grid + .gh { margin-top: 4px; }
 .grid.stack .main { flex-direction: column; align-items: flex-start; gap: 6px; } .grid.stack .txt { width: 100%; }
 .tile > .ctl { margin-top: auto; } /* the − / + row at the bottom when a neighbour's name takes two lines */
 .tile.hot { background: var(--hfb-hot-tile, color-mix(in srgb, #E8592C 8%, var(--secondary-background-color, #f0f2f5))); }
@@ -1920,16 +1942,21 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     }
     this._seen = this._ids.map((id) => this._hass.states?.[id]);
     const parts = cardParts(this._hass, this._cfg, this._pending);
-    if (!this._built) {
-      this._wrap.innerHTML = `<div class="card" data-p="box1"></div><div class="card"><div class="head2"><div class="h">Hlavice</div><div class="sub" data-p="sum"></div></div><div class="grid">${
-        this._cfg.valves.map((v) => `<div class="tw" data-v="${esc(v)}"></div>`).join('')}</div></div>`;
+    const groups = valveGroups(this._hass, this._cfg);
+    const sig = JSON.stringify(groups); // the skeleton is rebuilt when the parts change
+    if (this._built !== sig) {
+      this._wrap.innerHTML = `<div class="card" data-p="box1"></div><div class="card"><div class="head2"><div class="h">Hlavice</div><div class="sub" data-p="sum"></div></div>${
+        groupsHtml(groups, (v) => `<div class="tw" data-v="${esc(v)}"></div>`)}</div>`;
       this._last = {};
-      this._built = true;
+      this._built = sig;
     }
     this._set(this._wrap.querySelector('[data-p="box1"]'), parts.box1, 'box1');
     this._set(this._wrap.querySelector('[data-p="sum"]'), esc(parts.summary), 'sum');
-    this._wrap.querySelector('.grid').classList.toggle('stack', tileLayout(this._hass, this._cfg) === 'stack');
-    this._wrap.querySelectorAll('.tw').forEach((el, i) => this._set(el, parts.tiles[i], `t${i}`));
+    const stack = tileLayout(this._hass, this._cfg) === 'stack';
+    this._wrap.querySelectorAll('.grid').forEach((el) => el.classList.toggle('stack', stack));
+    // each slot gets its own valve's tile (slots are in group order, tiles in cfg.valves order)
+    const tile = Object.fromEntries(this._cfg.valves.map((v, i) => [v, parts.tiles[i]]));
+    this._wrap.querySelectorAll('.tw').forEach((el, i) => this._set(el, tile[el.dataset.v], `t${i}`));
     this._refreshDialog(true);
   }
 
