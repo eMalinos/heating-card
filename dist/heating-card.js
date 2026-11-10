@@ -72,6 +72,8 @@ const num = (v) => { const x = Number.parseFloat(v); return Number.isFinite(x) ?
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const SOURCE_TYPES = ['gas', 'electric', 'heat_pump'];
+// "24", "24,5", 24 -> kW; "", 0, negative, junk -> null (unset)
+const powerKw = (v) => { const x = Number(String(v ?? '').trim().replace(',', '.')); return x > 0 ? x : null; };
 
 export function normalizeConfig(config) {
   if (!config?.circuit || typeof config.circuit !== 'string') throw new Error('heating-card: circuit is required');
@@ -89,7 +91,7 @@ export function normalizeConfig(config) {
   // power_max_kw comes from HFB as a string ("24", "" = unset; 0 = unset too); source_type picks the kWh label.
   return {
     circuit: config.circuit, valves: [...valves], heading: config.heading || '', schedule_gesture: schedule, info_gesture: info, condensing_boiler: config.condensing_boiler !== false,
-    power_max_kw: Number(config.power_max_kw) || null, source_type: SOURCE_TYPES.includes(config.source_type) ? config.source_type : 'gas',
+    power_max_kw: powerKw(config.power_max_kw), source_type: SOURCE_TYPES.includes(config.source_type) ? config.source_type : 'gas',
   };
 }
 
@@ -1225,10 +1227,9 @@ function weightedMean(rows, period, end) {
 }
 
 const sumChange = (rows) => rows.reduce((s, r) => s + Math.max(0, r.change || 0), 0); // a counter reset shows up as a negative row
-const hasRows = (d) => !!d && [d.boiler, d.windowBoiler, d.windowValves, d.outdoor].some((x) => x.length);
-
 const EMPTY = { boiler: [], windowBoiler: [], windowValves: [], outdoor: [], windowEnergy: [], windowCost: [] };
 const KINDS = Object.keys(EMPTY);
+const hasRows = (d) => !!d && KINDS.some((k) => d[k]?.length); // the same kinds dataEnd looks at
 
 // The rows of [from, to) of every kind. A coarse row (day / month) that the cut falls into is replaced by the finer
 // `tail` rows (hourly, fetched for exactly that span), so both periods are cut at the same offset.
@@ -1256,7 +1257,8 @@ function statSide(d, rg, period) {
     sel,
     side: {
       boiler, windowBoiler: sumChange(sel.windowBoiler), windowValves: sumChange(sel.windowValves),
-      windowEnergy: sumChange(sel.windowEnergy), windowCost: sumChange(sel.windowCost),
+      // null (shown as —) when the side has no rows: the sensors only exist since HFB heating 1.17
+      windowEnergy: sel.windowEnergy.length ? sumChange(sel.windowEnergy) : null, windowCost: sel.windowCost.length ? sumChange(sel.windowCost) : null,
       outdoorMean: weightedMean(sel.outdoor, period, rg[1]), hdd, perHdd: hdd > 0 ? boiler / hdd : null,
     },
   };
@@ -1351,12 +1353,22 @@ export async function fetchStats(hass, ids, start, end, period, types = ['change
   })).filter((r) => !Number.isNaN(+r.start))]));
 }
 
-// The window savings in kWh / Kč exist only with power_max_kw (HFB heating 1.17); a heat pump has no Kč.
-export const statIds = (cfg) => ({
+// The window savings in kWh / Kč (HFB heating 1.17): only with power_max_kw, Kč never for a heat pump, and only while
+// the entity is there and available (HFB keeps it unavailable otherwise). Gates both the fetch and the tiles.
+const usable = (hass, id) => { const s = st(hass, id); return s != null && s !== 'unavailable' && s !== 'unknown'; };
+export function savingsIds(hass, cfg) {
+  const out = {};
+  if (!cfg.power_max_kw || !hass) return out;
+  const e = eid(cfg, 'sensor', 'heating_stats_window_energy_total'), k = eid(cfg, 'sensor', 'heating_stats_window_cost_total');
+  if (usable(hass, e)) out.windowEnergy = e;
+  if (cfg.source_type !== 'heat_pump' && usable(hass, k)) out.windowCost = k;
+  return out;
+}
+
+export const statIds = (cfg, hass = null) => ({
   boiler: eid(cfg, 'sensor', 'heating_stats_boiler_total'), windowBoiler: eid(cfg, 'sensor', 'heating_stats_window_boiler_total'),
   windowValves: eid(cfg, 'sensor', 'heating_stats_window_valves_total'), outdoor: eid(cfg, 'sensor', 'heating_outdoor_temperature'),
-  ...(cfg.power_max_kw ? { windowEnergy: eid(cfg, 'sensor', 'heating_stats_window_energy_total') } : {}),
-  ...(cfg.power_max_kw && cfg.source_type !== 'heat_pump' ? { windowCost: eid(cfg, 'sensor', 'heating_stats_window_cost_total') } : {}),
+  ...savingsIds(hass, cfg),
 });
 
 // Which savings rows the Okna metric shows: {energy: the kWh note | null, cost}. kWh needs power_max_kw and the entity,
@@ -1367,9 +1379,9 @@ const ENERGY_NOTE = {
   heat_pump: 'kWh tepla; horní odhad: hodiny × jmenovitý výkon',
 };
 export function savingsView(hass, cfg) {
-  const ids = statIds(cfg);
-  const energy = !!ids.windowEnergy && !!hass.states?.[ids.windowEnergy];
-  const cost = energy && !!ids.windowCost && !!hass.states?.[ids.windowCost] && num(st(hass, eid(cfg, 'input_number', 'heating_stats_price'))) > 0;
+  const ids = savingsIds(hass, cfg);
+  const energy = !!ids.windowEnergy;
+  const cost = energy && !!ids.windowCost && num(st(hass, eid(cfg, 'input_number', 'heating_stats_price'))) > 0;
   return { energy: energy ? ENERGY_NOTE[cfg.source_type] : null, cost };
 }
 
@@ -1378,7 +1390,7 @@ export function savingsView(hass, cfg) {
 export async function fetchStatsSet(hass, cfg, s, real) {
   const a = anchor(real, s.gran, s.offset);
   const r = ranges(s.offset ? a : hourFloor(a), s.gran);
-  const ids = statIds(cfg), list = Object.values(ids), period = PERIOD[s.gran];
+  const ids = statIds(cfg, hass), list = Object.values(ids), period = PERIOD[s.gran];
   const shape = (res) => Object.fromEntries(Object.entries(ids).map(([k, id]) => [k, res[id]]));
   const cr = r[s.cmp];
   const tailSpan = (cut) => {
@@ -1488,7 +1500,7 @@ const STATS_BODY = {
     const bars = statBars(st.gran, a.rows.cur.windowValves, n, [], false);
     const prev = statBars(st.gran, a.rows.cmp.windowValves, n, [], false);
     const share = cur.boiler > 0 ? `${fmt(Math.round((cur.windowBoiler / cur.boiler) * 100))} % běhu` : '';
-    const sv = v.savings ?? {}, kwh = (n) => `${fmt(n, 1)} kWh`, czk = (n) => `${fmt(n, 0)} Kč`;
+    const sv = v.savings ?? {}, kwh = (n) => (n == null ? '—' : `${fmt(n, 1)} kWh`), czk = (n) => (n == null ? '—' : `${fmt(n, n < 10 ? 1 : 0)} Kč`);
     return `${heroHtml(`Kotel stál kvůli oknům · ${c.noun}`, fmt(cur.windowBoiler, 1), cap(c.cmpLabel), hours(p?.windowBoiler))}
     ${p ? `<div class="chips tight">${delta(diff < 0, `${diff >= 0 ? '▲' : '▼'} ${signed(diff, 1)} h ušetřeno`)}</div>` : ''}
     <div class="help tight">Čas, kdy by kotel topil, ale jediná hlavice, která o teplo žádala, měla otevřené okno.</div>
@@ -1570,7 +1582,9 @@ const DIALOGS = {
   stats: {
     label: 'Statistiky',
     // everything else (selection, fetched rows) is in ctx and re-renders explicitly; hass only brings the title
-    ids: (hass, cfg) => { const i = statIds(cfg); return [eid(cfg, 'binary_sensor', 'heating_state'), eid(cfg, 'input_number', 'heating_stats_price'), i.windowEnergy, i.windowCost].filter(Boolean); },
+    ids: (hass, cfg) => [eid(cfg, 'binary_sensor', 'heating_state'), eid(cfg, 'input_number', 'heating_stats_price')],
+    // the two savings totals tick all the time: only whether their tiles show re-renders the dialog
+    sig: (hass, cfg) => JSON.stringify(savingsView(hass, cfg)),
     parts: (hass, cfg, ctx) => statsParts({ title: circuitTitle(hass, cfg), st: ctx.st, data: ctx.sdata, real: new Date(), savings: savingsView(hass, cfg) }),
   },
 };
@@ -2122,6 +2136,7 @@ class HeatingCard extends (globalThis.HTMLElement ?? class {}) {
     }
     this._gdDirty = false;
     const next = def.ids(hass, this._cfg, this._gdCtx).map((id) => hass.states?.[id]);
+    if (def.sig) next.push(def.sig(hass, this._cfg)); // a string, compared by value
     if (!force && this._gdSeen && this._gdSeen.length === next.length && next.every((x, i) => x === this._gdSeen[i])) return;
     this._gdSeen = next;
     if (!this._gdlg.firstElementChild) this._gdlg.innerHTML = gdShell;

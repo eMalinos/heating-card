@@ -26,7 +26,7 @@ heading: Topení přízemí            # optional; default: binary_sensor.heatin
 schedule_gesture: tap              # opens the schedule card for the valve
 info_gesture: icon_tap             # opens the valve dialog
 condensing_boiler: true            # false hides the Kotel tab of the settings dialog
-power_max_kw: "24"                 # optional; the heat source's rated power (kW), a number or a string, "" / 0 = unset
+power_max_kw: "24"                 # optional; the heat source's rated power (kW), a number or a string ("24,5" ok), "" / 0 = unset
 source_type: gas                   # gas | electric | heat_pump (default gas)
 ```
 
@@ -78,7 +78,7 @@ The min, max, step and unit of every number come from its `input_number`. A miss
 The dark **Statistiky** button in box 1 opens the statistics dialog (a bottom sheet under 600 px) with two metrics:
 
 - **Kotel**: how long the boiler ran, next to the same part of a comparison period. Hero number in hours, delta chips (`▲ +15 % (+0,8 h)`), paired bars (minutes per hour for a day, hours per day / month for a week / month / year) and the outdoor temperature as a line on a right axis, tiles *Ø venku*, *Denostupně*, *Na denostupeň* and *Okna ušetřila*. The switch **Přepočítat na venkovní teplotu** (on by default, kept while the card lives) adds a second chip and a sentence that compares the boiler time per degree day.
-- **Okna**: the boiler hours saved by open windows (hero), valve-hours the windows kept closed (bars, tile) and the share of the boiler's run. With `power_max_kw` (and the entity there) the tile *Ušetřená energie* (kWh) with a note that it is an upper bound (rated power × hours; *kWh plynu* / *kWh elektřiny* / *kWh tepla* by `source_type`), and while `input_number.heating_stats_price_<c>` is above 0 the tile *Ušetřeno* (Kč; never for `heat_pump`).
+- **Okna**: the boiler hours saved by open windows (hero), valve-hours the windows kept closed (bars, tile) and the share of the boiler's run. With `power_max_kw` (and the entity available; a comparison without rows yet shows —) the tile *Ušetřená energie* (kWh) with a note that it is an upper bound (rated power × hours; *kWh plynu* / *kWh elektřiny* / *kWh tepla* by `source_type`), and while `input_number.heating_stats_price_<c>` is above 0 the tile *Ušetřeno* (Kč; never for `heat_pump`).
 
 Period **Den / Týden / Měsíc / Rok** with ◀ ▶ (▶ is disabled on the current period; a week starts on Monday), one comparison chip at a time: day = *včera* / same day last month / same date last year, week = *minulý týden* / the same ISO week last year, month = last month / same month last year, year = last year. Comparisons are like-for-like: the comparison is cut at the same weekday / time as the current data reaches (a whole past period compares whole).
 

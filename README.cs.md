@@ -26,7 +26,7 @@ heading: Topení přízemí            # volitelné; výchozí: atribut title u 
 schedule_gesture: tap              # otevře kartu rozvrhu pro hlavici
 info_gesture: icon_tap             # otevře dialog hlavice
 condensing_boiler: true            # false skryje záložku Kotel v dialogu nastavení
-power_max_kw: "24"                 # volitelné; jmenovitý výkon zdroje tepla (kW), číslo nebo řetězec, "" / 0 = nenastaveno
+power_max_kw: "24"                 # volitelné; jmenovitý výkon zdroje tepla (kW), číslo nebo řetězec ("24,5" jde), "" / 0 = nenastaveno
 source_type: gas                   # gas | electric | heat_pump (výchozí gas)
 ```
 
@@ -70,7 +70,7 @@ Min, max, krok a jednotka každého čísla se berou z jeho `input_number`. Chyb
 Tmavé tlačítko **Statistiky** v prvním boxu otevře dialog statistik (pod 600 px jako spodní list) se dvěma metrikami:
 
 - **Kotel**: jak dlouho kotel běžel proti stejnému úseku srovnávaného období. Velké číslo v hodinách, chipy změny (`▲ +15 % (+0,8 h)`), dvojice sloupců (minuty za hodinu u dne, hodiny za den / měsíc u týdne / měsíce / roku) a venkovní teplota jako čára na pravé ose, dlaždice *Ø venku*, *Denostupně*, *Na denostupeň* a *Okna ušetřila*. Přepínač **Přepočítat na venkovní teplotu** (výchozí zapnuto, drží se po dobu života karty) přidá druhý chip a větu, která srovnává čas kotle na denostupeň.
-- **Okna**: hodiny kotle ušetřené otevřenými okny (velké číslo), hlavice-hodiny, které okna držela zavřené (sloupce, dlaždice), a podíl na běhu kotle. S `power_max_kw` (a existující entitou) dlaždice *Ušetřená energie* (kWh) s poznámkou, že jde o horní odhad (jmenovitý výkon × hodiny; *kWh plynu* / *kWh elektřiny* / *kWh tepla* podle `source_type`), a dokud je `input_number.heating_stats_price_<okruh>` nad 0, dlaždice *Ušetřeno* (Kč; nikdy u `heat_pump`).
+- **Okna**: hodiny kotle ušetřené otevřenými okny (velké číslo), hlavice-hodiny, které okna držela zavřené (sloupce, dlaždice), a podíl na běhu kotle. S `power_max_kw` (a dostupnou entitou; srovnání ještě bez řádků ukáže —) dlaždice *Ušetřená energie* (kWh) s poznámkou, že jde o horní odhad (jmenovitý výkon × hodiny; *kWh plynu* / *kWh elektřiny* / *kWh tepla* podle `source_type`), a dokud je `input_number.heating_stats_price_<okruh>` nad 0, dlaždice *Ušetřeno* (Kč; nikdy u `heat_pump`).
 
 Období **Den / Týden / Měsíc / Rok** se šipkami ◀ ▶ (▶ je na aktuálním období vypnutá; týden začíná v pondělí), vždy jeden chip srovnání: den = *včera* / stejný den minulého měsíce / stejné datum loni, týden = *minulý týden* / stejný ISO týden loni, měsíc = minulý měsíc / stejný měsíc loni, rok = loni. Srovnání je stejný úsek: srovnávané období se ořízne tam, kam sahají aktuální data (celé uplynulé období se srovnává celé).
 
