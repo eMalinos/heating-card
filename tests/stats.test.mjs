@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ranges, anchor, dataEnd, isoWeek, periodEnd, pct, degreeDays, analyzeStats, statBars, bucketCount, chipLabels, rangeLabel, explainText,
-  fetchStats, fetchStatsSet, statIds, statsHtml, statsParts, normalizeConfig, COMPARE, hourFloor,
+  fetchStats, fetchStatsSet, statIds, statsHtml, statsParts, normalizeConfig, COMPARE, hourFloor, savingsView,
 } from '../dist/heating-card.js';
 
 const at = (y, m, d, h = 0, mi = 0) => new Date(y, m - 1, d, h, mi);
@@ -380,4 +380,51 @@ test('Den chart: a 25-hour DST day grows the axis instead of overflowing', () =>
   const h = statsHtml({ title: 'T', st: { metric: 'boiler', gran: 'day', offset: -1, cmp: 'prev', norm: true }, data: { cur: { boiler: dup, windowBoiler: [], windowValves: [], outdoor: [], tail: null }, cmp: null }, real });
   const px = [...h.matchAll(/class="bk"><i style="height:([\d.]+)px/g)].map((m) => Number(m[1]));
   assert.ok(Math.max(...px) <= 134);
+});
+
+test('window savings (#26): kWh / Kč tiles by power_max_kw, the entities, the price and source_type', () => {
+  const cfgOf = (o = {}) => normalizeConfig({ circuit: 'c1', valves: ['climate.k'], ...o });
+  // power_max_kw is a string from HFB; a decimal comma is fine; "", 0, negative and junk are unset
+  assert.deepEqual(['24', '24,5', ' 7.5 ', 12, '', '0', 0, '-3', undefined, null, 'x'].map((p) => cfgOf({ power_max_kw: p }).power_max_kw), [24, 24.5, 7.5, 12, null, null, null, null, null, null, null]);
+  assert.deepEqual(['electric', 'heat_pump', 'coal', undefined].map((t) => cfgOf({ source_type: t }).source_type), ['electric', 'heat_pump', 'gas', 'gas']);
+  const E = 'sensor.heating_stats_window_energy_total_c1', K = 'sensor.heating_stats_window_cost_total_c1', P = 'input_number.heating_stats_price_c1';
+  const hass = (price = '1.8', e = '12', k = '21') => ({ states: { ...(e == null ? {} : { [E]: { state: e } }), ...(k == null ? {} : { [K]: { state: k } }), [P]: { state: price } } });
+  const gas = 'kWh plynu; horní odhad: hodiny kotle × jmenovitý výkon (kotel moduluje)';
+  // one gate for the fetch (statIds) and the tiles (savingsView): config + the entity there and available
+  const pw = cfgOf({ power_max_kw: '24' });
+  assert.deepEqual(Object.keys(statIds(pw)), ['boiler', 'windowBoiler', 'windowValves', 'outdoor']); // no hass, nothing to gate on
+  assert.deepEqual(Object.keys(statIds(pw, hass())).slice(4), ['windowEnergy', 'windowCost']);
+  assert.deepEqual(Object.keys(statIds(cfgOf({ power_max_kw: '24', source_type: 'heat_pump' }), hass())).slice(4), ['windowEnergy']);
+  assert.deepEqual(Object.keys(statIds(cfgOf(), hass())).slice(4), []); // no power
+  for (const bad of ['unavailable', 'unknown', null]) { // HFB keeps them unavailable without power / for a heat pump
+    assert.deepEqual(Object.keys(statIds(pw, hass('1.8', bad, bad))).slice(4), []);
+    assert.deepEqual(savingsView(hass('1.8', bad, bad), pw), { energy: null, cost: false });
+  }
+  assert.deepEqual(savingsView(hass('1.8', '12', 'unavailable'), pw), { energy: gas, cost: false });
+  assert.deepEqual(savingsView(hass(), pw), { energy: gas, cost: true });
+  assert.deepEqual(savingsView(hass('0'), pw), { energy: gas, cost: false });
+  assert.deepEqual(savingsView(hass(), cfgOf({ power_max_kw: '24', source_type: 'heat_pump' })), { energy: 'kWh tepla; horní odhad: hodiny × jmenovitý výkon', cost: false });
+  assert.deepEqual(savingsView(hass(), cfgOf({ power_max_kw: '' })), { energy: null, cost: false });
+
+  const rows = (d, kwh, czk) => Object.assign(day(2026, 11, d, d === 8 ? 21 : 24, 0.3, 4), {
+    windowEnergy: kwh == null ? [] : [{ start: at(2026, 11, d, 7), end: at(2026, 11, d, 8), change: kwh, mean: null }],
+    windowCost: czk == null ? [] : [{ start: at(2026, 11, d, 7), end: at(2026, 11, d, 8), change: czk, mean: null }],
+  });
+  const view = (savings, cmp = rows(7, 2.4, 4.3), cur = rows(8, 4.8, 18.6)) => ({ ...stView({ metric: 'windows' }, dataset(cur, cmp)), savings });
+  const both = { energy: 'kWh elektřiny; horní odhad: hodiny kotle × jmenovitý výkon', cost: true };
+  const h = statsHtml(view(both));
+  assert.match(h, /<div class="lbl">Ušetřená energie<\/div><div class="fv">4,8 kWh<\/div><div class="cap">včera 2,4 kWh<\/div>/);
+  // Kč: one decimal below 10, whole crowns above
+  assert.match(h, /<div class="lbl">Ušetřeno<\/div><div class="fv">19 Kč<\/div><div class="cap">včera 4,3 Kč<\/div>/);
+  assert.match(h, /Ušetřená energie: kWh elektřiny; horní odhad: hodiny kotle × jmenovitý výkon\. Ušetřeno: Kč = /);
+  // a side without rows (before the HFB 1.17 deploy) shows —, not 0
+  const fresh = statsHtml(view(both, rows(7, null, null)));
+  assert.match(fresh, /<div class="fv">4,8 kWh<\/div><div class="cap">včera —<\/div>/);
+  assert.match(fresh, /<div class="fv">19 Kč<\/div><div class="cap">včera —<\/div>/);
+  assert.match(statsHtml(view(both, rows(7, null, null), rows(8, null, null))), /<div class="lbl">Ušetřená energie<\/div><div class="fv">—<\/div>/);
+  const noKc = statsHtml(view({ energy: 'kWh tepla; horní odhad: hodiny × jmenovitý výkon', cost: false }));
+  assert.match(noKc, /4,8 kWh/); assert.doesNotMatch(noKc, /Ušetřeno|Kč/);
+  assert.doesNotMatch(statsHtml(view(undefined)), /Ušetřená energie|kWh/);
+  // without the new rows (no power) nothing breaks
+  assert.match(statsHtml(stView({ metric: 'windows' }, dataset(day(2026, 11, 8, 21, 0.3, 4), null))), /Kotel ušetřil/);
 });
