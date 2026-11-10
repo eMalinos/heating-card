@@ -191,6 +191,18 @@
   },
   "state": "10.0"
  },
+ "input_number.heating_stats_price_circuit_demo": {
+  "attributes": {
+   "friendly_name": "Cena energie topení",
+   "initial": null,
+   "max": 100.0,
+   "min": 0.0,
+   "mode": "box",
+   "step": 0.01,
+   "unit_of_measurement": "Kč/kWh"
+  },
+  "state": "1.8"
+ },
  "input_number.heating_status_duration": {
   "attributes": {
    "editable": true,
@@ -376,6 +388,24 @@
    "week_number": 45
   },
   "state": "ok"
+ },
+ "sensor.heating_stats_window_cost_total_circuit_demo": {
+  "attributes": {
+   "friendly_name": "heating_stats_window_cost_total_circuit_demo",
+   "icon": "mdi:cash",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "Kč"
+  },
+  "state": "213.1"
+ },
+ "sensor.heating_stats_window_energy_total_circuit_demo": {
+  "attributes": {
+   "friendly_name": "heating_stats_window_energy_total_circuit_demo",
+   "icon": "mdi:fire-off",
+   "state_class": "total_increasing",
+   "unit_of_measurement": "kWh"
+  },
+  "state": "118.4"
  },
  "sensor.heating_valves_circuit_demo": {
   "attributes": {

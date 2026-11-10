@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ranges, anchor, dataEnd, isoWeek, periodEnd, pct, degreeDays, analyzeStats, statBars, bucketCount, chipLabels, rangeLabel, explainText,
-  fetchStats, fetchStatsSet, statIds, statsHtml, statsParts, normalizeConfig, COMPARE, hourFloor,
+  fetchStats, fetchStatsSet, statIds, statsHtml, statsParts, normalizeConfig, COMPARE, hourFloor, savingsView,
 } from '../dist/heating-card.js';
 
 const at = (y, m, d, h = 0, mi = 0) => new Date(y, m - 1, d, h, mi);
@@ -380,4 +380,36 @@ test('Den chart: a 25-hour DST day grows the axis instead of overflowing', () =>
   const h = statsHtml({ title: 'T', st: { metric: 'boiler', gran: 'day', offset: -1, cmp: 'prev', norm: true }, data: { cur: { boiler: dup, windowBoiler: [], windowValves: [], outdoor: [], tail: null }, cmp: null }, real });
   const px = [...h.matchAll(/class="bk"><i style="height:([\d.]+)px/g)].map((m) => Number(m[1]));
   assert.ok(Math.max(...px) <= 134);
+});
+
+test('window savings (#26): kWh / Kč tiles by power_max_kw, the entities, the price and source_type', () => {
+  const cfgOf = (o = {}) => normalizeConfig({ circuit: 'c1', valves: ['climate.k'], ...o });
+  // power_max_kw is a string from HFB; "" and 0 are unset
+  assert.deepEqual(['24', '', '0', 0, undefined, 'x'].map((p) => cfgOf({ power_max_kw: p }).power_max_kw), [24, null, null, null, null, null]);
+  assert.deepEqual(['electric', 'heat_pump', 'coal', undefined].map((t) => cfgOf({ source_type: t }).source_type), ['electric', 'heat_pump', 'gas', 'gas']);
+  assert.deepEqual(Object.keys(statIds(cfgOf({ power_max_kw: '24' }))).slice(4), ['windowEnergy', 'windowCost']);
+  assert.deepEqual(Object.keys(statIds(cfgOf({ power_max_kw: '24', source_type: 'heat_pump' }))).slice(4), ['windowEnergy']);
+  const E = 'sensor.heating_stats_window_energy_total_c1', K = 'sensor.heating_stats_window_cost_total_c1', P = 'input_number.heating_stats_price_c1';
+  const hass = (price = '1.8', extra = {}) => ({ states: { [E]: { state: '12' }, [K]: { state: '21' }, [P]: { state: price }, ...extra } });
+  assert.deepEqual(savingsView(hass(), cfgOf({ power_max_kw: '24' })), { energy: 'kWh plynu; horní odhad: hodiny kotle × jmenovitý výkon (kotel moduluje)', cost: true });
+  assert.deepEqual(savingsView(hass('0'), cfgOf({ power_max_kw: '24' })), { energy: 'kWh plynu; horní odhad: hodiny kotle × jmenovitý výkon (kotel moduluje)', cost: false });
+  assert.deepEqual(savingsView(hass(), cfgOf({ power_max_kw: '24', source_type: 'heat_pump' })), { energy: 'kWh tepla; horní odhad: hodiny × jmenovitý výkon', cost: false });
+  assert.deepEqual(savingsView(hass(), cfgOf({ power_max_kw: '' })), { energy: null, cost: false });
+  assert.deepEqual(savingsView({ states: {} }, cfgOf({ power_max_kw: '24' })), { energy: null, cost: false }); // no entity yet
+
+  const rows = (d, kwh, czk) => Object.assign(day(2026, 11, d, d === 8 ? 21 : 24, 0.3, 4), {
+    windowEnergy: [{ start: at(2026, 11, d, 7), end: at(2026, 11, d, 8), change: kwh, mean: null }],
+    windowCost: [{ start: at(2026, 11, d, 7), end: at(2026, 11, d, 8), change: czk, mean: null }],
+  });
+  const view = (savings) => ({ ...stView({ metric: 'windows' }, dataset(rows(8, 4.8, 8.6), rows(7, 2.4, 4.3))), savings });
+  const h = statsHtml(view({ energy: 'kWh elektřiny; horní odhad: hodiny kotle × jmenovitý výkon', cost: true }));
+  assert.match(h, /<div class="lbl">Ušetřená energie<\/div><div class="fv">4,8 kWh<\/div><div class="cap">včera 2,4 kWh<\/div>/);
+  assert.match(h, /<div class="lbl">Ušetřeno<\/div><div class="fv">9 Kč<\/div><div class="cap">včera 4 Kč<\/div>/);
+  assert.match(h, /Ušetřená energie: kWh elektřiny; horní odhad: hodiny kotle × jmenovitý výkon\. Ušetřeno: Kč = /);
+  const noKc = statsHtml(view({ energy: 'kWh tepla; horní odhad: hodiny × jmenovitý výkon', cost: false }));
+  assert.match(noKc, /4,8 kWh/); assert.doesNotMatch(noKc, /Ušetřeno|Kč/);
+  const none = statsHtml(view(undefined));
+  assert.doesNotMatch(none, /Ušetřená energie|kWh/);
+  // without the new rows (no power) nothing breaks
+  assert.match(statsHtml(stView({ metric: 'windows' }, dataset(day(2026, 11, 8, 21, 0.3, 4), null))), /Kotel ušetřil/);
 });

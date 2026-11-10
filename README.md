@@ -10,7 +10,7 @@ A Home Assistant card for one heating circuit, in the Homecraft look: a circuit 
 
 **HACS (custom repository):** HACS → ⋮ → Custom repositories → `https://github.com/eMalinos/heating-card`, type **Dashboard** → download **Heating Card** → reload the browser.
 
-**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.15`, type **JavaScript module**). Change `?v=` after copying a new version.
+**Manual:** copy [`dist/heating-card.js`](dist/heating-card.js) to your Home Assistant `config/www/` folder and add it as a dashboard resource (Settings → Dashboards → ⋮ → Resources → URL `/local/heating-card.js?v=0.1.16`, type **JavaScript module**). Change `?v=` after copying a new version.
 
 ## Configuration
 
@@ -26,9 +26,13 @@ heading: Topení přízemí            # optional; default: binary_sensor.heatin
 schedule_gesture: tap              # opens the schedule card for the valve
 info_gesture: icon_tap             # opens the valve dialog
 condensing_boiler: true            # false hides the Kotel tab of the settings dialog
+power_max_kw: "24"                 # optional; the heat source's rated power (kW), a number or a string, "" / 0 = unset
+source_type: gas                   # gas | electric | heat_pump (default gas)
 ```
 
 `condensing_boiler` (boolean, default `true`; anything but `false` counts as `true`) says whether the circuit has a condensing boiler; without one the settings dialog has no *Kotel* tab.
+
+`power_max_kw` and `source_type` (HFB heating 1.17 passes them from the heat source profile; `power_max_kw` as a string) turn on the window savings in kWh / Kč in the statistics dialog.
 
 Gestures are `tap`, `double_tap`, `hold`, `icon_tap`, `icon_double_tap`, `icon_hold` or `none` (the same values as the heating parameters); the two must differ unless both are `none`.
 
@@ -74,7 +78,7 @@ The min, max, step and unit of every number come from its `input_number`. A miss
 The dark **Statistiky** button in box 1 opens the statistics dialog (a bottom sheet under 600 px) with two metrics:
 
 - **Kotel**: how long the boiler ran, next to the same part of a comparison period. Hero number in hours, delta chips (`▲ +15 % (+0,8 h)`), paired bars (minutes per hour for a day, hours per day / month for a week / month / year) and the outdoor temperature as a line on a right axis, tiles *Ø venku*, *Denostupně*, *Na denostupeň* and *Okna ušetřila*. The switch **Přepočítat na venkovní teplotu** (on by default, kept while the card lives) adds a second chip and a sentence that compares the boiler time per degree day.
-- **Okna**: the boiler hours saved by open windows (hero), valve-hours the windows kept closed (bars, tile) and the share of the boiler's run.
+- **Okna**: the boiler hours saved by open windows (hero), valve-hours the windows kept closed (bars, tile) and the share of the boiler's run. With `power_max_kw` (and the entity there) the tile *Ušetřená energie* (kWh) with a note that it is an upper bound (rated power × hours; *kWh plynu* / *kWh elektřiny* / *kWh tepla* by `source_type`), and while `input_number.heating_stats_price_<c>` is above 0 the tile *Ušetřeno* (Kč; never for `heat_pump`).
 
 Period **Den / Týden / Měsíc / Rok** with ◀ ▶ (▶ is disabled on the current period; a week starts on Monday), one comparison chip at a time: day = *včera* / same day last month / same date last year, week = *minulý týden* / the same ISO week last year, month = last month / same month last year, year = last year. Comparisons are like-for-like: the comparison is cut at the same weekday / time as the current data reaches (a whole past period compares whole).
 
@@ -86,6 +90,8 @@ It reads only the long-term statistics through `recorder/statistics_during_perio
 | `sensor.heating_stats_window_boiler_total_<c>` (`change`, hours) | boiler hours saved by windows |
 | `sensor.heating_stats_window_valves_total_<c>` (`change`, hours) | valve-hours held closed by windows |
 | `sensor.heating_outdoor_temperature_<c>` (`mean`, °C) | outdoor mean and degree days |
+| `sensor.heating_stats_window_energy_total_<c>` (`change`, kWh) | energy saved by windows (only with `power_max_kw`) |
+| `sensor.heating_stats_window_cost_total_<c>` (`change`, Kč) | money saved by windows (only with `power_max_kw`, not for `heat_pump`) |
 
 Statistics rows are hourly for a day and a week, daily for a month, monthly for a year. **Degree days** = Σ max(0, 18 °C − mean outdoor temperature) × the row's length in days (a warmer-than-18 °C row counts 0), so the boiler time per degree day is `h / degree days`. A failing call shows *Statistiky nejsou k dispozici.*, a new install without statistics shows an empty-state line.
 
@@ -107,6 +113,7 @@ python3 -m http.server 8766 &
 
 ## Changelog
 
+- **0.1.16** — statistics dialog › Okna: window savings in kWh (*Ušetřená energie*, upper bound) and Kč (*Ušetřeno*, while the price is above 0, not for a heat pump), new options `power_max_kw` and `source_type` (HFB heating 1.17.0-beta.2)
 - **0.1.15** — valve chart: doběh (run) is violet, apart from the window's blue (Bento makes info = primary, so they matched); a legend item shows only its bands with the lines, a second click shows everything
 - **0.1.14** — valve dialog: the valve name ends with its circuit part, `Obývák (Babi)` (HFB heating `use_parts`)
 - **0.1.13** — valve chart: labels every 0.5 °C up to a 4 °C span (whole degrees above), helper lines at the quarters more visible, the chart a bit taller so the labels breathe

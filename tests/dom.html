@@ -98,7 +98,9 @@
       const hours = [];
       for (let h = new Date(+from); h < to; h = new Date(+h + 3600000)) {
         const f = FIX[`${h.getFullYear()}-${h.getMonth() + 1}-${h.getDate()}`], i = h.getHours();
-        const v = id.includes('window_boiler') ? (f ? f.wb[i] ?? 0 : 0) : id.includes('window_valves') ? (f ? f.wv[i] ?? 0 : 0)
+        // window savings (#26): 24 kW × the saved boiler hours, × 1.8 Kč/kWh
+        const wbh = f ? f.wb[i] ?? 0 : 0;
+        const v = id.includes('window_energy') ? wbh * 24 : id.includes('window_cost') ? wbh * 24 * 1.8 : id.includes('window_boiler') ? (f ? f.wb[i] ?? 0 : 0) : id.includes('window_valves') ? (f ? f.wv[i] ?? 0 : 0)
           : id.includes('stats_boiler') ? (f ? f.boiler[i] ?? 0 : 0.25) : (f ? f.temp[i] ?? 5 : 5);
         hours.push({ start: +h, end: +h + 3600000, ...(id.includes('outdoor_temperature') ? { mean: v } : { change: v }) });
       }
@@ -130,7 +132,7 @@
   const calls = [];
   const infos = [];
   const hass = { states, entities, callWS, callService: async (domain, service, data) => { calls.push({ domain, service, data }); } };
-  const cfg = { circuit: C, valves: valveIds };
+  const cfg = { circuit: C, valves: valveIds, power_max_kw: '24', source_type: 'gas' }; // HFB passes the power as a string
 
   // ?ctl=arc|ruler|track: the valve dialog's target control (screenshots of the v8 sliders)
   if (q.get('ctl')) states[`input_select.heating_target_control_${C}`] = { state: q.get('ctl'), attributes: {} };
@@ -623,7 +625,7 @@
   r.stOpen = sd.open && sd.querySelector('.vd-title').textContent === 'Statistiky' && sd.querySelector('.sub').textContent === 'Topení přízemí' && sd.getAttribute('aria-label') === 'Statistiky'
     && sd.querySelector('.st-lbl').textContent === 'Dnes 8. 11.' && sd.querySelector('[data-act="nav"][data-d="1"]').disabled;
   const rec = wsCalls.slice(nWs).filter((m) => m.type === 'recorder/statistics_during_period');
-  r.stFetch = rec.length === 2 && rec.every((m) => m.statistic_ids.length === 4 && m.period === 'hour') && rec[0].statistic_ids.includes(`sensor.heating_stats_boiler_total_${C}`);
+  r.stFetch = rec.length === 2 && rec.every((m) => m.statistic_ids.length === 6 && m.period === 'hour') && rec[0].statistic_ids.includes(`sensor.heating_stats_boiler_total_${C}`);
   r.stHero = hero() === '6,2' && sd.querySelector('.st-hero .lbl').textContent === 'Kotel běžel dnes · do 21:00' && sd.querySelector('.st-side .lbl').textContent === 'Včera do 21:00';
   r.stChips = /^▲ \+\d+ % \(\+\d,\d h\)\|▼ −\d+ % na denostupeň$/.test(chips()) && sd.querySelectorAll('.st-chart .bk').length === 24 && !!sd.querySelector('.st-chart polyline');
   r.stTiles = [...sd.querySelectorAll('.vd-tile .lbl')].map((x) => x.textContent).join() === 'Ø venku,Denostupně,Na denostupeň,Okna ušetřila';
@@ -634,7 +636,13 @@
   const nMetric = wsCalls.length;
   sd.querySelector('[data-act="metric"][data-val="windows"]').click(); await tick();
   r.stWindows = hero() === '0,4' && sd.querySelector('.st-hero .lbl').textContent === 'Kotel stál kvůli oknům · dnes' && wsCalls.length === nMetric && !sd.querySelector('.st-chart polyline')
-    && [...sd.querySelectorAll('.vd-tile .lbl')].map((x) => x.textContent).join() === 'Hlavice-hodiny bez topení,Kotel ušetřil' && /1,6 h/.test(sd.querySelector('.vd-facts').textContent);
+    && [...sd.querySelectorAll('.vd-tile .lbl')].map((x) => x.textContent).join() === 'Hlavice-hodiny bez topení,Kotel ušetřil,Ušetřená energie,Ušetřeno' && /1,6 h/.test(sd.querySelector('.vd-facts').textContent);
+  // window savings (#26): 0.4 h × 24 kW = 9.6 kWh, × 1.8 = 17 Kč; price 0 drops the Kč tile and its note
+  const tileVal = (l) => [...sd.querySelectorAll('.vd-tile')].find((t) => t.querySelector('.lbl').textContent === l)?.querySelector('.fv').textContent.replace(/\s/g, ' ');
+  r.stSavings = tileVal('Ušetřená energie') === '9,6 kWh' && tileVal('Ušetřeno') === '17 Kč' && /Ušetřená energie: kWh plynu; horní odhad/.test(sd.textContent) && /Ušetřeno: Kč =/.test(sd.textContent);
+  card.hass = { ...hass, states: { ...states, [`input_number.heating_stats_price_${C}`]: { state: '0', attributes: {} } } }; await tick();
+  r.stSavingsNoPrice = tileVal('Ušetřená energie') === '9,6 kWh' && !tileVal('Ušetřeno') && !/Ušetřeno: Kč/.test(sd.textContent);
+  card.hass = hass; await tick();
   // another comparison and another period fetch again; navigation goes back and ▶ enables
   sd.querySelector('[data-act="cmp"][data-val="yoy"]').click(); await tick(100);
   r.stCmp = sd.querySelector('.chip.on').textContent === '8. 11. 2025' && wsCalls.length > nMetric;

@@ -7,7 +7,7 @@
  * https://github.com/eMalinos/heating-card
  */
 
-const VERSION = '0.1.15';
+const VERSION = '0.1.16';
 
 const GESTURES = ['tap', 'double_tap', 'hold', 'icon_tap', 'icon_double_tap', 'icon_hold', 'none'];
 const HOLD_MS = 500;
@@ -71,6 +71,8 @@ export const plural = (n, one, few, many) => `${n} ${pluralWord(n, one, few, man
 const num = (v) => { const x = Number.parseFloat(v); return Number.isFinite(x) ? x : null; };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+const SOURCE_TYPES = ['gas', 'electric', 'heat_pump'];
+
 export function normalizeConfig(config) {
   if (!config?.circuit || typeof config.circuit !== 'string') throw new Error('heating-card: circuit is required');
   const valves = config.valves;
@@ -83,8 +85,12 @@ export function normalizeConfig(config) {
     if (!GESTURES.includes(g)) throw new Error(`heating-card: ${k} must be one of ${GESTURES.join(', ')}`);
   }
   if (schedule === info && schedule !== 'none') throw new Error('heating-card: schedule_gesture and info_gesture must differ');
-  // condensing_boiler: false hides the settings dialog's Kotel tab; anything but `false` keeps it
-  return { circuit: config.circuit, valves: [...valves], heading: config.heading || '', schedule_gesture: schedule, info_gesture: info, condensing_boiler: config.condensing_boiler !== false };
+  // condensing_boiler: false hides the settings dialog's Kotel tab; anything but `false` keeps it.
+  // power_max_kw comes from HFB as a string ("24", "" = unset; 0 = unset too); source_type picks the kWh label.
+  return {
+    circuit: config.circuit, valves: [...valves], heading: config.heading || '', schedule_gesture: schedule, info_gesture: info, condensing_boiler: config.condensing_boiler !== false,
+    power_max_kw: Number(config.power_max_kw) || null, source_type: SOURCE_TYPES.includes(config.source_type) ? config.source_type : 'gas',
+  };
 }
 
 const st = (hass, id) => hass.states?.[id]?.state;
@@ -1221,7 +1227,7 @@ function weightedMean(rows, period, end) {
 const sumChange = (rows) => rows.reduce((s, r) => s + Math.max(0, r.change || 0), 0); // a counter reset shows up as a negative row
 const hasRows = (d) => !!d && [d.boiler, d.windowBoiler, d.windowValves, d.outdoor].some((x) => x.length);
 
-const EMPTY = { boiler: [], windowBoiler: [], windowValves: [], outdoor: [] };
+const EMPTY = { boiler: [], windowBoiler: [], windowValves: [], outdoor: [], windowEnergy: [], windowCost: [] };
 const KINDS = Object.keys(EMPTY);
 
 // The rows of [from, to) of every kind. A coarse row (day / month) that the cut falls into is replaced by the finer
@@ -1231,12 +1237,12 @@ function cutRows(d, rg, period) {
   for (const k of KINDS) {
     const rows = [];
     let from = Infinity;
-    for (const x of d[k]) {
+    for (const x of d[k] ?? []) { // windowEnergy / windowCost are fetched only with power_max_kw
       if (x.start < rg[0] || x.start >= rg[1]) continue;
       if (d.tail && +rowEnd(x, period) > +rg[1]) from = Math.min(from, +x.start);
       else rows.push(x);
     }
-    if (d.tail) for (const x of d.tail[k]) if (+x.start >= from && x.start >= rg[0] && x.start < rg[1]) rows.push(x);
+    if (d.tail) for (const x of d.tail[k] ?? []) if (+x.start >= from && x.start >= rg[0] && x.start < rg[1]) rows.push(x);
     sel[k] = rows;
   }
   return sel;
@@ -1250,6 +1256,7 @@ function statSide(d, rg, period) {
     sel,
     side: {
       boiler, windowBoiler: sumChange(sel.windowBoiler), windowValves: sumChange(sel.windowValves),
+      windowEnergy: sumChange(sel.windowEnergy), windowCost: sumChange(sel.windowCost),
       outdoorMean: weightedMean(sel.outdoor, period, rg[1]), hdd, perHdd: hdd > 0 ? boiler / hdd : null,
     },
   };
@@ -1262,7 +1269,7 @@ function statSide(d, rg, period) {
 export function analyzeStats(gran, key, now, cur, cmp) {
   const period = PERIOD[gran];
   cur = cur ?? EMPTY;
-  const all = KINDS.flatMap((k) => cur[k]);
+  const all = KINDS.flatMap((k) => cur[k] ?? []);
   const end = new Date(Math.min(+dataEnd(all, ranges(now, gran).cur[0], now, period), +now));
   const r = ranges(end, gran);
   const any = hasRows(cur) || hasRows(cmp);
@@ -1344,10 +1351,27 @@ export async function fetchStats(hass, ids, start, end, period, types = ['change
   })).filter((r) => !Number.isNaN(+r.start))]));
 }
 
+// The window savings in kWh / Kč exist only with power_max_kw (HFB heating 1.17); a heat pump has no Kč.
 export const statIds = (cfg) => ({
   boiler: eid(cfg, 'sensor', 'heating_stats_boiler_total'), windowBoiler: eid(cfg, 'sensor', 'heating_stats_window_boiler_total'),
   windowValves: eid(cfg, 'sensor', 'heating_stats_window_valves_total'), outdoor: eid(cfg, 'sensor', 'heating_outdoor_temperature'),
+  ...(cfg.power_max_kw ? { windowEnergy: eid(cfg, 'sensor', 'heating_stats_window_energy_total') } : {}),
+  ...(cfg.power_max_kw && cfg.source_type !== 'heat_pump' ? { windowCost: eid(cfg, 'sensor', 'heating_stats_window_cost_total') } : {}),
 });
+
+// Which savings rows the Okna metric shows: {energy: the kWh note | null, cost}. kWh needs power_max_kw and the entity,
+// Kč also a price above 0 (input_number.heating_stats_price_<c>) and never a heat pump. Texts as the HFB mushroom popup.
+const ENERGY_NOTE = {
+  gas: 'kWh plynu; horní odhad: hodiny kotle × jmenovitý výkon (kotel moduluje)',
+  electric: 'kWh elektřiny; horní odhad: hodiny kotle × jmenovitý výkon',
+  heat_pump: 'kWh tepla; horní odhad: hodiny × jmenovitý výkon',
+};
+export function savingsView(hass, cfg) {
+  const ids = statIds(cfg);
+  const energy = !!ids.windowEnergy && !!hass.states?.[ids.windowEnergy];
+  const cost = energy && !!ids.windowCost && !!hass.states?.[ids.windowCost] && num(st(hass, eid(cfg, 'input_number', 'heating_stats_price'))) > 0;
+  return { energy: energy ? ENERGY_NOTE[cfg.source_type] : null, cost };
+}
 
 // The current range and the selected comparison (whole; analyzeStats cuts it like-for-like): {cur, cmp} = {boiler, windowBoiler, windowValves, outdoor} rows.
 // For the current month / year the day / month row at the cut is partial: `tail` = hourly rows of just that span, for both sides.
@@ -1464,6 +1488,7 @@ const STATS_BODY = {
     const bars = statBars(st.gran, a.rows.cur.windowValves, n, [], false);
     const prev = statBars(st.gran, a.rows.cmp.windowValves, n, [], false);
     const share = cur.boiler > 0 ? `${fmt(Math.round((cur.windowBoiler / cur.boiler) * 100))} % běhu` : '';
+    const sv = v.savings ?? {}, kwh = (n) => `${fmt(n, 1)} kWh`, czk = (n) => `${fmt(n, 0)} Kč`;
     return `${heroHtml(`Kotel stál kvůli oknům · ${c.noun}`, fmt(cur.windowBoiler, 1), cap(c.cmpLabel), hours(p?.windowBoiler))}
     ${p ? `<div class="chips tight">${delta(diff < 0, `${diff >= 0 ? '▲' : '▼'} ${signed(diff, 1)} h ušetřeno`)}</div>` : ''}
     <div class="help tight">Čas, kdy by kotel topil, ale jediná hlavice, která o teplo žádala, měla otevřené okno.</div>
@@ -1471,7 +1496,10 @@ const STATS_BODY = {
     <div class="vd-facts">
       ${tile('Hlavice-hodiny bez topení', hours(cur.windowValves), p && capt(c.cmpLabel, hours(p.windowValves)))}
       ${tile('Kotel ušetřil', hours(cur.windowBoiler), share)}
+      ${sv.energy ? tile('Ušetřená energie', kwh(cur.windowEnergy), p && capt(c.cmpLabel, kwh(p.windowEnergy))) : ''}
+      ${sv.cost ? tile('Ušetřeno', czk(cur.windowCost), p && capt(c.cmpLabel, czk(p.windowCost))) : ''}
     </div>
+    ${sv.energy ? `<div class="help">Ušetřená energie: ${esc(sv.energy)}.${sv.cost ? ' Ušetřeno: Kč = ušetřená energie × cena za kWh (pomocník Cena energie topení).' : ''}</div>` : ''}
     <div class="help">Hlavice-hodiny = součet hodin, kdy otevřené okno držela hlavici zavřenou (2 hlavice hodinu = 2 h). Po místnostech zatím ne – potřebovalo by to nový senzor.</div>`;
   },
 };
@@ -1542,8 +1570,8 @@ const DIALOGS = {
   stats: {
     label: 'Statistiky',
     // everything else (selection, fetched rows) is in ctx and re-renders explicitly; hass only brings the title
-    ids: (hass, cfg) => [eid(cfg, 'binary_sensor', 'heating_state')],
-    parts: (hass, cfg, ctx) => statsParts({ title: circuitTitle(hass, cfg), st: ctx.st, data: ctx.sdata, real: new Date() }),
+    ids: (hass, cfg) => { const i = statIds(cfg); return [eid(cfg, 'binary_sensor', 'heating_state'), eid(cfg, 'input_number', 'heating_stats_price'), i.windowEnergy, i.windowCost].filter(Boolean); },
+    parts: (hass, cfg, ctx) => statsParts({ title: circuitTitle(hass, cfg), st: ctx.st, data: ctx.sdata, real: new Date(), savings: savingsView(hass, cfg) }),
   },
 };
 
